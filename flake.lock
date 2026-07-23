@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "cl-weave": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784453306,
+        "narHash": "sha256-Ff88QPdT2BKHSQF0HHeypPgvG0kQGBQXSilMyX2fMsY=",
+        "owner": "nerima-lisp",
+        "repo": "cl-weave",
+        "rev": "bf6b7876e08246b78b550642abf7c40a0c469c50",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nerima-lisp",
+        "repo": "cl-weave",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1784555310,
@@ -18,6 +34,7 @@
     },
     "root": {
       "inputs": {
+        "cl-weave": "cl-weave",
         "nixpkgs": "nixpkgs"
       }
     }

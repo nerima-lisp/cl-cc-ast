@@ -3,10 +3,20 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # Test-only: cl-weave is the test framework. Pulled as a plain source tree
+    # and handed to the test runner via CL_CC_AST_CL_WEAVE_ROOT.
+    cl-weave = {
+      url = "github:nerima-lisp/cl-weave";
+      flake = false;
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      cl-weave,
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -52,6 +62,19 @@
 
       checks = forAllSystems (pkgs: {
         compile = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+
+        test = pkgs.stdenvNoCC.mkDerivation {
+          name = "cl-cc-ast-test";
+          src = self;
+          nativeBuildInputs = [ pkgs.sbcl ];
+          buildPhase = ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+            export CL_CC_AST_CL_WEAVE_ROOT="${toString cl-weave}"
+            sbcl --noinform --non-interactive --script scripts/run-tests.lisp
+          '';
+          installPhase = "touch $out";
+        };
       });
     };
 }
