@@ -4,3 +4,5 @@
 /.claude/
 /.serena/
 *.paredit-tmp-*
+/cl-cc-ast-coverage-report/
+/cl-cc-ast.coverage

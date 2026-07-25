@@ -234,7 +234,7 @@ KEY slots may include a fourth explicit keyword-name element."
 
 (defun %ast-defclass-option-value-to-sexp (value)
   "Return the source-level value for a DEFCLASS option AST VALUE."
-  (if (and value (ast-quote-p value))
+  (if (ast-quote-p value)
       (ast-quote-value value)
       (ast-to-sexp value)))
 

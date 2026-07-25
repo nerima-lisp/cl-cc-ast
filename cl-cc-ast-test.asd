@@ -8,8 +8,11 @@
   :pathname "tests"
   :serial t
   :components ((:file "package")
+               (:file "test-support")
                (:file "ast-tests")
-               (:file "ast-analysis-tests"))
+               (:file "ast-analysis-tests")
+               (:file "ast-roundtrip-tests")
+               (:file "closure-tests"))
   :perform (asdf:test-op (op system)
              (declare (ignore op system))
              (unless (uiop:symbol-call :cl-weave

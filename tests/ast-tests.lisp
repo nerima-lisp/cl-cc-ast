@@ -28,6 +28,10 @@
   (expect (ast-location-string (make-ast-int :value 1))
           :to-equal "<unknown location>"))
 
+(it-sequential "ast-location-string formats a bare file when line is absent"
+  (expect (ast-location-string (make-ast-int :value 1 :source-file "foo.lisp"))
+          :to-equal "foo.lisp"))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; ast-error
 ;;; ─────────────────────────────────────────────────────────────────────────
@@ -38,6 +42,14 @@
     (handler-case (ast-error node "test error ~A" 42)
       (ast-compilation-error () (setf signaled t)))
     (expect signaled :to-be-truthy)))
+
+(it-sequential "ast-error's condition report formats location and message"
+  (let ((node (make-ast-int :value 1 :source-file "t.lisp" :source-line 1))
+        (report nil))
+    (handler-case (ast-error node "bad thing: ~A" 42)
+      (ast-compilation-error (condition) (setf report (princ-to-string condition))))
+    (expect (search "t.lisp:1" report) :to-be-truthy)
+    (expect (search "bad thing: 42" report) :to-be-truthy)))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; namespace / imports node metadata

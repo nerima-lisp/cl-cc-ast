@@ -81,7 +81,7 @@ All structural knowledge about AST shapes lives here."
                           (when (ast-defclass-metaclass node)
                             (list (ast-defclass-metaclass node)))))
     (ast-defgeneric nil)
-    (ast-make-instance (loop for (k v) on (ast-make-instance-initargs node) by #'cddr collect v))
+    (ast-make-instance (mapcar #'cdr (ast-make-instance-initargs node)))
     (ast-slot-value (list (ast-slot-value-object node)))
     (ast-set-slot-value (list (ast-set-slot-value-object node) (ast-set-slot-value-value node)))
     (ast-set-gethash (list (ast-set-gethash-key node)
@@ -107,6 +107,46 @@ Only meaningful for binding forms (let, lambda, defun, flet, labels, mvb)."
     (ast-local-fns (mapcar #'first (ast-local-fns-bindings node)))
     (ast-multiple-value-bind (ast-mvb-vars node))
     (t nil)))
+
+;;; ─── CPS Tree Search ──────────────────────────────────────────────────────
+;;;
+;;; AST-SEARCH-CPS walks NODE via AST-CHILDREN and drives the outcome entirely
+;;; through two continuations rather than a return value: SUCCESS receives
+;;; the first matching node, FAILURE is invoked with no arguments when the
+;;; whole subtree is exhausted. Each recursive step builds a new FAILURE
+;;; continuation that resumes the search at the next sibling, so backtracking
+;;; across the tree is ordinary function composition instead of a loop with
+;;; mutable state. This is the traversal primitive closure.lisp's escape
+;;; analysis is built on (see %ESCAPE-MENTIONS-NODE-P).
+
+(defun ast-search-cps (node predicate success failure)
+  "Search NODE and its AST-CHILDREN descendants, depth-first, for a node
+satisfying PREDICATE.
+
+Calls (SUCCESS matching-node) on the first match. Otherwise tries each child
+of NODE in turn, passing SUCCESS through unchanged and wrapping FAILURE in a
+continuation that advances to the next child. Calls (FAILURE) with no
+arguments once every descendant has been tried without a match."
+  (if (funcall predicate node)
+      (funcall success node)
+      (labels ((try-children (children)
+                 (if (null children)
+                     (funcall failure)
+                     (ast-search-cps (first children) predicate
+                                     success
+                                     (lambda () (try-children (rest children)))))))
+        (try-children (ast-children node)))))
+
+(defun ast-find-first (node predicate)
+  "Return the first node in NODE (including NODE itself) satisfying
+PREDICATE via depth-first AST-CHILDREN traversal, or NIL if none matches.
+
+A direct-style convenience built from AST-SEARCH-CPS: the SUCCESS
+continuation is #'IDENTITY (return the match as-is) and the FAILURE
+continuation is a function that always returns NIL, turning the
+continuation-driven search back into an ordinary return value for callers
+that just want an answer rather than control over what happens next."
+  (ast-search-cps node predicate #'identity (constantly nil)))
 
 ;;; ─── Source Location Utilities ───────────────────────────────────────────────
 

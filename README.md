@@ -14,9 +14,9 @@ depend on this package through its **public API only**.
 
 ## Status
 
-Extracted and building standalone. Test wiring (currently the monorepo's
-`deftest` harness) is being migrated to cl-weave in a follow-up; see the cl-cc
-split design.
+Extracted and building standalone. Tests run on
+[cl-weave](https://github.com/nerima-lisp/cl-weave); see the cl-cc split
+design.
 
 ## Usage
 
@@ -28,8 +28,12 @@ split design.
 
 ```bash
 nix develop            # sbcl dev shell
-nix flake check        # compile check (loads :cl-cc-ast)
+nix flake check        # compile check, tests, and coverage gate
 sbcl --script scripts/run-compile-check.lisp
+sbcl --script scripts/run-tests.lisp
+sbcl --script scripts/run-coverage.lisp   # SB-COVER report + gate; see the
+                                           # script's header for what the gate
+                                           # does and does not enforce
 ```
 
 ## License

@@ -20,16 +20,11 @@ Uses ast-children for generic traversal."
   (let ((captured nil))
     (dolist (form body-forms captured)
       (typecase form
-        ;; Lambda/defun boundaries: capture free vars that overlap with PARAMS
-        (ast-lambda
+        ;; Lambda/defun boundaries: capture free vars that overlap with PARAMS.
+        ;; ast-lambda and ast-defun are both ast-callable, so FIND-FREE-VARIABLES'
+        ;; own ast-callable clause already handles either concrete type directly.
+        (ast-callable
          (setf captured (union captured (intersection (find-free-variables form) params))))
-        (ast-defun
-         (let ((pseudo (make-ast-lambda :params (ast-defun-params form)
-                                        :optional-params (ast-defun-optional-params form)
-                                        :rest-param (ast-defun-rest-param form)
-                                        :key-params (ast-defun-key-params form)
-                                        :body   (ast-defun-body form))))
-            (setf captured (union captured (intersection (find-free-variables pseudo) params)))))
         ;; labels/flet: each binding body is a closure boundary
         (ast-local-fns
          (dolist (binding (ast-local-fns-bindings form))
@@ -62,15 +57,11 @@ Binding forms use ast-bound-names; others fall through to ast-children."
      (let ((binding-free (free-vars-of-list (mapcar #'cdr (ast-let-bindings ast))))
            (body-free    (free-vars-of-list (ast-let-body ast))))
        (set-difference (union binding-free body-free) (ast-bound-names ast))))
-    (ast-lambda
-     (let ((body-free    (free-vars-of-list (ast-lambda-body ast)))
-           (default-free (union (free-vars-of-defaults (ast-lambda-optional-params ast))
-                                (free-vars-of-defaults (ast-lambda-key-params ast)))))
-       (set-difference (union body-free default-free) (ast-bound-names ast))))
-    (ast-defun
-     (let ((body-free    (free-vars-of-list (ast-defun-body ast)))
-           (default-free (union (free-vars-of-defaults (ast-defun-optional-params ast))
-                                (free-vars-of-defaults (ast-defun-key-params ast)))))
+    ;; ast-lambda and ast-defun are both ast-callable: one clause, shared accessors
+    (ast-callable
+     (let ((body-free    (free-vars-of-list (ast-callable-body ast)))
+           (default-free (union (free-vars-of-defaults (ast-callable-optional-params ast))
+                                (free-vars-of-defaults (ast-callable-key-params ast)))))
        (set-difference (union body-free default-free) (ast-bound-names ast))))
     (ast-local-fns
      (let ((binding-free (free-vars-of-list
@@ -97,16 +88,19 @@ Binding forms use ast-bound-names; others fall through to ast-children."
           kind-lists :initial-value nil))
 
 (defun %escape-mentions-node-p (node binding-name)
-  "Return T if NODE or any descendant references BINDING-NAME."
-  (typecase node
-    (ast-var (eq (ast-var-name node) binding-name))
-    (t (some (lambda (child) (%escape-mentions-node-p child binding-name))
-             (ast-children node)))))
+  "Return T if NODE or any descendant references BINDING-NAME.
+
+Driven by AST-SEARCH-CPS: the SUCCESS continuation fires on the first
+AST-VAR matching BINDING-NAME, and the FAILURE continuation — reached once
+every descendant has been tried — is what makes a non-mention NIL."
+  (ast-search-cps node
+                  (lambda (n) (and (typep n 'ast-var) (eq (ast-var-name n) binding-name)))
+                  (lambda (n) (declare (ignore n)) t)
+                  (lambda () nil)))
 
 (defun %escape-mentions-forms-p (forms binding-name)
   "Return T if any form in FORMS references BINDING-NAME."
-  (and (listp forms)
-       (some (lambda (f) (%escape-mentions-node-p f binding-name)) forms)))
+  (some (lambda (f) (%escape-mentions-node-p f binding-name)) forms))
 
 (defun %escape-classify-children (node binding-name safe-consumers)
   "Merge escape kinds for all children of NODE."
@@ -123,6 +117,40 @@ Binding forms use ast-bound-names; others fall through to ast-children."
            (mapcar (lambda (f) (%escape-classify f binding-name safe-consumers)) body)
            :initial-value nil)))
 
+(defparameter +external-call-primitive-names+ '("APPLY" "FUNCALL")
+  "Uppercase names of call operators that pass their arguments to an
+unknown callee. Named and factored out of %ESCAPE-CLASSIFY so the data this
+clause matches against is legible independent of the escape-classification
+logic built on top of it.")
+
+(defun %escape-classify-call (node binding-name safe-consumers)
+  "Classify how BINDING-NAME escapes through the AST-CALL NODE.
+
+Split out of %ESCAPE-CLASSIFY because the call case alone carries three
+distinct rules — a declared safe consumer, a known external-call primitive,
+or a generic callee — each worth reading as its own COND clause rather than
+nested inside a nine-way TYPECASE."
+  (let ((func (ast-call-func node))
+        (args (ast-call-args node)))
+    (cond
+      ((and (symbolp func) (member (symbol-name func) safe-consumers :test #'string=))
+       nil)
+      ((and (symbolp func) (member (symbol-name func) +external-call-primitive-names+ :test #'string=))
+       (%escape-add-kind :external-call
+                         (reduce #'%escape-merge-kinds
+                                 (mapcar (lambda (a) (%escape-classify a binding-name safe-consumers)) args)
+                                 :initial-value nil)))
+      (t
+       (let ((arg-kinds (reduce #'%escape-merge-kinds
+                                (mapcar (lambda (a) (%escape-classify a binding-name safe-consumers)) args)
+                                :initial-value nil)))
+         (if arg-kinds
+             (%escape-add-kind :external-call
+                               (%escape-merge-kinds
+                                (when (typep func 'ast-node) (%escape-classify func binding-name safe-consumers))
+                                arg-kinds))
+             (when (typep func 'ast-node) (%escape-classify func binding-name safe-consumers))))))))
+
 (defun %escape-classify (node binding-name safe-consumers)
   "Classify how BINDING-NAME escapes through NODE."
   (typecase node
@@ -135,26 +163,7 @@ Binding forms use ast-bound-names; others fall through to ast-children."
      (%escape-add-kind :external-call
                        (%escape-classify-children node binding-name safe-consumers)))
     (ast-call
-     (let ((func (ast-call-func node))
-           (args (ast-call-args node)))
-       (cond
-         ((and (symbolp func) (member (symbol-name func) safe-consumers :test #'string=))
-          nil)
-         ((and (symbolp func) (member (symbol-name func) '("APPLY" "FUNCALL") :test #'string=))
-          (%escape-add-kind :external-call
-                            (reduce #'%escape-merge-kinds
-                                    (mapcar (lambda (a) (%escape-classify a binding-name safe-consumers)) args)
-                                    :initial-value nil)))
-         (t
-          (let ((arg-kinds (reduce #'%escape-merge-kinds
-                                   (mapcar (lambda (a) (%escape-classify a binding-name safe-consumers)) args)
-                                   :initial-value nil)))
-            (if arg-kinds
-                (%escape-add-kind :external-call
-                                  (%escape-merge-kinds
-                                   (when (typep func 'ast-node) (%escape-classify func binding-name safe-consumers))
-                                   arg-kinds))
-                (when (typep func 'ast-node) (%escape-classify func binding-name safe-consumers))))))))
+     (%escape-classify-call node binding-name safe-consumers))
     (t (%escape-classify-children node binding-name safe-consumers))))
 
 (defun binding-escape-kinds-in-body (body-forms binding-name &key (safe-consumers nil))
@@ -188,7 +197,7 @@ function names that are allowed to consume the binding without causing escape."
 
 CAPTURED-VARS is an alist of (var . reg). The key ignores order and groups by
 captured variable names only, which is enough to detect sibling closures that
-could share one environment record." 
+could share one environment record."
   (sort (remove-duplicates (mapcar #'car captured-vars) :test #'eq)
         #'string< :key #'symbol-name))
 
@@ -215,7 +224,7 @@ emitted."
   "Group sibling closure captures that share the same captured variable set.
 
 Returns an EQUAL hash-table mapping canonical capture keys to the list of
-captured-var alists using that key. Singleton groups are omitted." 
+captured-var alists using that key. Singleton groups are omitted."
   (let ((all-groups (make-hash-table :test #'equal))
         (shared-only (make-hash-table :test #'equal)))
     (dolist (captures captured-var-lists)
@@ -247,13 +256,13 @@ captured-var alists using that key. Singleton groups are omitted."
       0))
 
 (defun binding-one-shot-p (body-forms binding-name &key (safe-consumers nil))
-  "Return T when BINDING-NAME is a non-escaping direct call used exactly once." 
+  "Return T when BINDING-NAME is a non-escaping direct call used exactly once."
   (and (= 1 (binding-direct-call-count-in-body body-forms binding-name))
        (not (binding-escapes-in-body-p body-forms binding-name
                                        :safe-consumers safe-consumers))))
 
 (defun closure-sharing-key (entry-label captured-vars)
-  "Return a canonical sharing key for closures with ENTRY-LABEL and CAPTURED-VARS." 
+  "Return a canonical sharing key for closures with ENTRY-LABEL and CAPTURED-VARS."
   (list entry-label (closure-capture-key captured-vars)))
 
 (defun group-shareable-closures (closure-descriptors)
@@ -261,7 +270,7 @@ captured-var alists using that key. Singleton groups are omitted."
 
 CLOSURE-DESCRIPTORS is a list of plist-like records containing at least
   :entry-label and :captured-vars.
-Singleton groups are omitted." 
+Singleton groups are omitted."
   (let ((all-groups (make-hash-table :test #'equal))
         (shared-only (make-hash-table :test #'equal)))
     (dolist (desc closure-descriptors)

@@ -45,7 +45,7 @@
           buildPhase = ''
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME"
-            sbcl --noinform --non-interactive --script scripts/run-compile-check.lisp
+            sbcl --noinform --script scripts/run-compile-check.lisp
           '';
           installPhase = ''
             mkdir -p "$out/share/common-lisp/source/cl-cc-ast"
@@ -71,9 +71,22 @@
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME"
             export CL_CC_AST_CL_WEAVE_ROOT="${toString cl-weave}"
-            sbcl --noinform --non-interactive --script scripts/run-tests.lisp
+            sbcl --noinform --script scripts/run-tests.lisp
           '';
           installPhase = "touch $out";
+        };
+
+        coverage = pkgs.stdenvNoCC.mkDerivation {
+          name = "cl-cc-ast-coverage";
+          src = self;
+          nativeBuildInputs = [ pkgs.sbcl ];
+          buildPhase = ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+            export CL_CC_AST_CL_WEAVE_ROOT="${toString cl-weave}"
+            sbcl --noinform --script scripts/run-coverage.lisp
+          '';
+          installPhase = "mkdir -p $out && cp -R cl-cc-ast-coverage-report $out/report";
         };
       });
     };

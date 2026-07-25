@@ -105,6 +105,8 @@
     #:ast-set-gethash-key #:ast-set-gethash-table #:ast-set-gethash-value
     ;; Data layer protocol
     #:ast-children #:ast-bound-names
+    ;; CPS tree search (ast-functions.lisp)
+    #:ast-search-cps #:ast-find-first
     ;; Source utilities + error reporting
     #:ast-location-string
     #:ast-compilation-error
