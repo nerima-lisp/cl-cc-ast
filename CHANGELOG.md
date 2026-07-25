@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing has been released from this repository yet. Everything below describes
-the work that has accumulated since `cl-cc-ast` was extracted from the `cl-cc`
-monorepo; it will become the `0.1.0` section when the first tag is cut.
+## [0.1.0] - 2026-07-26
+
+The first release. `cl-cc-ast` is the dependency-free leaf of the `cl-cc`
+compiler, extracted so that the systems above it can depend on the AST without
+pulling in the whole compiler.
 
 ### Added
 
