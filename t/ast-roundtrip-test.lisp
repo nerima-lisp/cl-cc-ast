@@ -1,7 +1,7 @@
-;;;; tests/ast-roundtrip-tests.lisp — AST -> S-expression roundtrip (cl-weave).
+;;;; t/ast-roundtrip-test.lisp — AST -> S-expression roundtrip (cl-weave).
 ;;;;
 ;;;; Covers every AST-TO-SEXP method and SLOT-DEF-TO-SEXP using
-;;;; DEFINE-AST-TO-SEXP-CASES, a thin specialization of test-support.lisp's
+;;;; DEFINE-AST-TO-SEXP-CASES, a thin specialization of helpers-cases.lisp's
 ;;;; DEFINE-CASES that wraps every row's node form in an AST-TO-SEXP call.
 
 (in-package :cl-cc-ast/test)

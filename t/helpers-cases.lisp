@@ -1,4 +1,4 @@
-;;;; tests/test-support.lisp — shared table-test macro (cl-weave).
+;;;; t/helpers-cases.lisp — shared table-test macro (cl-weave).
 ;;;;
 ;;;; CL-WEAVE's IT-EACH binds its row data literally, without evaluation — a
 ;;;; good fit for plain numbers, but not for the constructor calls this

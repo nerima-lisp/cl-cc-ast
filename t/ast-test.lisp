@@ -1,4 +1,4 @@
-;;;; tests/ast-tests.lisp — cl-cc-ast unit tests (cl-weave).
+;;;; t/ast-test.lisp — cl-cc-ast unit tests (cl-weave).
 ;;;;
 ;;;; Covers cl-cc-ast's own public API: source-location formatting, the
 ;;;; ast-error condition, and optional namespace/imports node metadata.

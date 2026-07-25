@@ -1,4 +1,4 @@
-;;;; tests/ast-analysis-tests.lisp — ast-children / ast-bound-names (cl-weave).
+;;;; t/ast-analysis-test.lisp — ast-children / ast-bound-names (cl-weave).
 ;;;;
 ;;;; The structural (ast-children) and scoping (ast-bound-names) data layers,
 ;;;; which are pure cl-cc-ast API.
