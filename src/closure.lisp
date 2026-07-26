@@ -30,9 +30,11 @@ Uses ast-children for generic traversal."
          (dolist (binding (ast-local-fns-bindings form))
            (let ((pseudo (make-ast-lambda :params (second binding) :body (cddr binding))))
              (setf captured (union captured (intersection (find-free-variables pseudo) params)))))
-         (setf captured (union captured (find-captured-in-children (ast-local-fns-body form) params))))
+         (setf captured
+               (union captured (find-captured-in-children (ast-local-fns-body form) params))))
         ;; All other compound forms: recurse via ast-children
-        (t (setf captured (union captured (find-captured-in-children (ast-children form) params))))))))
+        (t (setf captured
+                 (union captured (find-captured-in-children (ast-children form) params))))))))
 
 (defun free-vars-of-list (nodes)
   "Union of free variables across all AST NODES in a list."
@@ -135,19 +137,25 @@ nested inside a nine-way TYPECASE."
     (cond
       ((and (symbolp func) (member (symbol-name func) safe-consumers :test #'string=))
        nil)
-      ((and (symbolp func) (member (symbol-name func) +external-call-primitive-names+ :test #'string=))
+      ((and (symbolp func)
+            (member (symbol-name func) +external-call-primitive-names+ :test #'string=))
        (%escape-add-kind :external-call
                          (reduce #'%escape-merge-kinds
-                                 (mapcar (lambda (a) (%escape-classify a binding-name safe-consumers)) args)
+                                 (mapcar (lambda (a)
+                                           (%escape-classify a binding-name safe-consumers))
+                                         args)
                                  :initial-value nil)))
       (t
        (let ((arg-kinds (reduce #'%escape-merge-kinds
-                                (mapcar (lambda (a) (%escape-classify a binding-name safe-consumers)) args)
+                                (mapcar (lambda (a)
+                                          (%escape-classify a binding-name safe-consumers))
+                                        args)
                                 :initial-value nil)))
          (if arg-kinds
              (%escape-add-kind :external-call
                                (%escape-merge-kinds
-                                (when (typep func 'ast-node) (%escape-classify func binding-name safe-consumers))
+                                (when (typep func 'ast-node)
+                                  (%escape-classify func binding-name safe-consumers))
                                 arg-kinds))
              (when (typep func 'ast-node) (%escape-classify func binding-name safe-consumers))))))))
 

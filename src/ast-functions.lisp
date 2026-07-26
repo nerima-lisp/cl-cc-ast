@@ -12,7 +12,7 @@
 
 (in-package :cl-cc/ast)
 
-;;; ─── AST Data Layer ────────────────────────────────────────────────────────
+;;; ─── AST Data Layer ───────────────────────
 ;;;
 ;;; ast-children    — returns child sub-expressions (flat list of ast-nodes)
 ;;; ast-bound-names — returns names newly bound by a binding form
@@ -71,7 +71,8 @@ All structural knowledge about AST shapes lives here."
                                   append (copy-list (cddr c)))))
     ;; Multiple values
     (ast-multiple-value-call (cons (ast-mv-call-func node) (copy-list (ast-mv-call-args node))))
-    (ast-multiple-value-prog1 (cons (ast-mv-prog1-first node) (copy-list (ast-mv-prog1-forms node))))
+    (ast-multiple-value-prog1 (cons (ast-mv-prog1-first node)
+                                    (copy-list (ast-mv-prog1-forms node))))
     (ast-multiple-value-bind (cons (ast-mvb-values-form node) (copy-list (ast-mvb-body node))))
     ;; Defvar: optional init-form
     (ast-defvar (when (ast-defvar-value node) (list (ast-defvar-value node))))
@@ -108,7 +109,7 @@ Only meaningful for binding forms (let, lambda, defun, flet, labels, mvb)."
     (ast-multiple-value-bind (ast-mvb-vars node))
     (t nil)))
 
-;;; ─── CPS Tree Search ──────────────────────────────────────────────────────
+;;; ─── CPS Tree Search ──────────────────────
 ;;;
 ;;; AST-SEARCH-CPS walks NODE via AST-CHILDREN and drives the outcome entirely
 ;;; through two continuations rather than a return value: SUCCESS receives
@@ -148,7 +149,7 @@ continuation-driven search back into an ordinary return value for callers
 that just want an answer rather than control over what happens next."
   (ast-search-cps node predicate #'identity (constantly nil)))
 
-;;; ─── Source Location Utilities ───────────────────────────────────────────────
+;;; ─── Source Location Utilities ────────────
 
 (defun ast-location-string (node)
   "Return a human-readable string of the source location for NODE."
