@@ -6,7 +6,7 @@
 ;;;; compiler modules continue to see AST symbols unqualified.
 
 (defpackage :cl-cc/ast
-  (:use :cl)
+  (:use #:cl)
   (:export
     ;; Base and intermediate structs
     #:ast-node #:make-ast-node #:ast-node-p
