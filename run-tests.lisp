@@ -13,8 +13,19 @@
 ;;;; An empty suite still fails: cl-cc-ast/test's :perform passes
 ;;;; :pass-with-no-tests nil to cl-weave, so a run that registers zero tests
 ;;;; is an error rather than a pass.
+;;;;
+;;;; TEST-TIMEOUT-SECONDS is enforced in-process via SB-EXT:WITH-TIMEOUT, not
+;;;; only by the shell `timeout` wrapper flake.nix's checks/apps run this
+;;;; script under. A bare `sbcl --script run-tests.lisp` invocation outside
+;;;; Nix — the "Outside Nix" path documented in README.md — has no such
+;;;; wrapper, so a hang (an infinite loop reached by a future node kind, say)
+;;;; would otherwise block forever instead of failing loudly.
 
 (require :asdf)
+
+(defconstant +test-timeout-seconds+ 100
+  "Kept below flake.nix's `timeout 120` wrapper so a hang fails here, with a
+named condition and a non-zero exit, rather than being killed by the shell.")
 
 (defun script-directory ()
   (make-pathname :name nil
@@ -31,5 +42,11 @@
 
 (let ((root (script-directory)))
   (configure-local-source-registry root)
-  (asdf:test-system "cl-cc-ast")
+  (handler-case
+      (sb-ext:with-timeout +test-timeout-seconds+
+        (asdf:test-system "cl-cc-ast"))
+    (sb-ext:timeout ()
+      (format t "~&FAIL cl-cc-ast tests: exceeded ~D second timeout~%" +test-timeout-seconds+)
+      (finish-output)
+      (uiop:quit 1)))
   (uiop:quit 0))
