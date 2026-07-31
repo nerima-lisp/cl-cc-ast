@@ -162,7 +162,7 @@ that just want an answer rather than control over what happens next."
       ((and file line)
        (format nil "~A:~D" file line))
       (file
-       (format nil "~A" file))
+       (princ-to-string file))
       (t "<unknown location>"))))
 
 (define-condition ast-compilation-error (error)

@@ -13,7 +13,17 @@
     # variable; it is a normal flake input now, which is what lets ASDF find
     # cl-weave through CL_SOURCE_REGISTRY like any other dependency.
     cl-weave = {
-      url = "github:nerima-lisp/cl-weave/v1.0.0";
+      url = "github:nerima-lisp/cl-weave/v1.1.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # The org's own ASDF-system-as-derivation builder (the `crane` of this
+    # org), used below for `packages.cl-cc-ast` instead of nixpkgs' generic
+    # `sbcl.buildASDFSystem`. Pinned to a release tag for the same reason
+    # cl-weave is: a bare `github:nerima-lisp/cl-nix-forge` follows its
+    # default branch.
+    cl-nix-forge = {
+      url = "github:nerima-lisp/cl-nix-forge/v0.1.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -28,6 +38,7 @@
       self,
       nixpkgs,
       cl-weave,
+      cl-nix-forge,
       treefmt-nix,
       ...
     }:
@@ -78,13 +89,21 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          cl = cl-nix-forge.lib.${system};
         in
         rec {
-          cl-cc-ast = pkgs.sbcl.buildASDFSystem {
-            pname = "cl-cc-ast";
+          # cl-cc-ast has no Lisp dependencies of its own (:depends-on ()), so
+          # lispDependencies is empty here; cl-weave only enters the picture
+          # for the test-only `cl-cc-ast/test` system, which this package
+          # deliberately does not build (see checks.default below, which runs
+          # the full suite instead). mkLispSource allowlists .asd/.lisp files
+          # under the source tree rather than hashing everything self
+          # contains (docs/, .github/, flake.lock, a stray local .fasl, ...).
+          cl-cc-ast = cl.lispDerivation {
+            lispSystem = "cl-cc-ast";
             inherit version;
-            src = self;
-            systems = [ "cl-cc-ast" ];
+            src = cl.mkLispSource { root = ./.; };
+            lispDependencies = [ ];
           };
           default = cl-cc-ast;
 

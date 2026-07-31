@@ -88,9 +88,9 @@ KEY slots may include a fourth explicit keyword-name element."
         (ast-to-sexp (ast-return-from-value node))))
 
 (defmethod ast-to-sexp ((node ast-tagbody))
-  (list* 'tagbody
-         (loop for (tag . forms) in (ast-tagbody-tags node)
-               nconc (cons tag (mapcar #'ast-to-sexp forms)))))
+  (cons 'tagbody
+        (loop for (tag . forms) in (ast-tagbody-tags node)
+              nconc (cons tag (mapcar #'ast-to-sexp forms)))))
 
 (defmethod ast-to-sexp ((node ast-go))
   (list 'go (ast-go-tag node)))
@@ -188,7 +188,7 @@ KEY slots may include a fourth explicit keyword-name element."
                          (var (second clause))
                          (body (cddr clause)))
                      (list* error-type
-                            (if var (list var) nil)
+                            (when var (list var))
                             (mapcar #'ast-to-sexp body))))
                  (ast-handler-case-clauses node))))
 

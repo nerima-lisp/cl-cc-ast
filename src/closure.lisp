@@ -1,83 +1,158 @@
 ;;;; compile/closure.lisp - Closure and Free Variable Analysis
 (in-package :cl-cc/ast)
 
-(defun mutated-vars-of-list (nodes)
-  "Union of setq-mutation targets across all AST NODES in a list."
-  (reduce #'union (mapcar #'find-mutated-variables nodes) :initial-value nil))
-
-(defun find-mutated-variables (ast)
-  "Find all variable names that are targets of SETQ in AST.
-Uses ast-children for generic traversal — new node types work automatically."
+(defun find-mutated-variables (ast &optional (k #'identity))
+  "Call (FUNCALL K result) with all variable names that are targets of SETQ in
+AST. Uses ast-children for generic traversal — new node types work
+automatically. K defaults to #'IDENTITY, so an ordinary direct-style call
+(FIND-MUTATED-VARIABLES ast) still returns the result as a value; a caller
+that wants control over what happens next passes its own continuation, in the
+same style AST-SEARCH-CPS does for tree search."
   (if (typep ast 'ast-setq)
-      (union (list (ast-setq-var ast))
-             (mutated-vars-of-list (ast-children ast)))
-      (mutated-vars-of-list (ast-children ast))))
+      (mutated-vars-of-list
+       (ast-children ast)
+       (lambda (children-mutated)
+         (funcall k (union (list (ast-setq-var ast)) children-mutated))))
+      (mutated-vars-of-list (ast-children ast) k)))
 
-(defun find-captured-in-children (body-forms params)
-  "Find variables that inner lambdas/defuns in BODY-FORMS capture as free variables.
-PARAMS are the current scope's bound variables — only those are candidates for boxing.
-Uses ast-children for generic traversal."
-  (let ((captured nil))
-    (dolist (form body-forms captured)
-      (typecase form
-        ;; Lambda/defun boundaries: capture free vars that overlap with PARAMS.
-        ;; ast-lambda and ast-defun are both ast-callable, so FIND-FREE-VARIABLES'
-        ;; own ast-callable clause already handles either concrete type directly.
-        (ast-callable
-         (setf captured (union captured (intersection (find-free-variables form) params))))
-        ;; labels/flet: each binding body is a closure boundary
-        (ast-local-fns
-         (dolist (binding (ast-local-fns-bindings form))
-           (let ((pseudo (make-ast-lambda :params (second binding) :body (cddr binding))))
-             (setf captured (union captured (intersection (find-free-variables pseudo) params)))))
-         (setf captured
-               (union captured (find-captured-in-children (ast-local-fns-body form) params))))
-        ;; All other compound forms: recurse via ast-children
-        (t (setf captured
-                 (union captured (find-captured-in-children (ast-children form) params))))))))
+(defun mutated-vars-of-list (nodes &optional (k #'identity))
+  "Call (FUNCALL K result) with the union of setq-mutation targets across all
+AST NODES in a list. K defaults to #'IDENTITY for ordinary direct-style calls."
+  (if (null nodes)
+      (funcall k nil)
+      (find-mutated-variables
+       (first nodes)
+       (lambda (first-mutated)
+         (mutated-vars-of-list
+          (rest nodes)
+          (lambda (rest-mutated)
+            (funcall k (union first-mutated rest-mutated))))))))
 
-(defun free-vars-of-list (nodes)
-  "Union of free variables across all AST NODES in a list."
-  (reduce #'union (mapcar #'find-free-variables nodes) :initial-value nil))
+(defun %local-fns-captured-bindings (form params)
+  "Union, over every binding in the AST-LOCAL-FNS FORM, of the PARAMS its own
+body captures as a pseudo-lambda closure boundary."
+  (reduce #'union
+          (mapcar (lambda (binding)
+                    (let ((pseudo (make-ast-lambda :params (second binding)
+                                                   :body (cddr binding))))
+                      (intersection (find-free-variables pseudo) params)))
+                  (ast-local-fns-bindings form))
+          :initial-value nil))
+
+(defun %captured-in-form (form params &optional (k #'identity))
+  "Call (FUNCALL K result) with the variables from PARAMS that FORM's own
+closure boundaries capture, or that recursing into FORM's children captures
+transitively. One clause of FIND-CAPTURED-IN-CHILDREN's per-form logic,
+factored out so that function reads as a CPS fold over BODY-FORMS rather than
+a mutable accumulator threaded through a TYPECASE. K defaults to #'IDENTITY
+for ordinary direct-style calls."
+  (typecase form
+    ;; Lambda/defun boundaries: capture free vars that overlap with PARAMS.
+    ;; ast-lambda and ast-defun are both ast-callable, so FIND-FREE-VARIABLES'
+    ;; own ast-callable clause already handles either concrete type directly.
+    (ast-callable (funcall k (intersection (find-free-variables form) params)))
+    ;; labels/flet: each binding body is a closure boundary
+    (ast-local-fns
+     (find-captured-in-children
+      (ast-local-fns-body form) params
+      (lambda (body-captured)
+        (funcall k (union (%local-fns-captured-bindings form params) body-captured)))))
+    ;; All other compound forms: recurse via ast-children
+    (t (find-captured-in-children (ast-children form) params k))))
+
+(defun find-captured-in-children (body-forms params &optional (k #'identity))
+  "Call (FUNCALL K result) with the variables that inner lambdas/defuns in
+BODY-FORMS capture as free variables. PARAMS are the current scope's bound
+variables — only those are candidates for boxing. Uses ast-children for
+generic traversal. K defaults to #'IDENTITY, so an ordinary direct-style call
+(FIND-CAPTURED-IN-CHILDREN body-forms params) still returns the result as a
+value."
+  (if (null body-forms)
+      (funcall k nil)
+      (%captured-in-form
+       (first body-forms) params
+       (lambda (first-captured)
+         (find-captured-in-children
+          (rest body-forms) params
+          (lambda (rest-captured)
+            (funcall k (union first-captured rest-captured))))))))
+
+(defun free-vars-of-list (nodes &optional (k #'identity))
+  "Call (FUNCALL K result) with the union of free variables across all AST
+NODES in a list. K defaults to #'IDENTITY for ordinary direct-style calls."
+  (if (null nodes)
+      (funcall k nil)
+      (find-free-variables
+       (first nodes)
+       (lambda (first-free)
+         (free-vars-of-list
+          (rest nodes)
+          (lambda (rest-free)
+            (funcall k (union first-free rest-free))))))))
 
 (defun free-vars-of-defaults (param-list)
   "Union of free variables in the default expressions of an optional/key PARAM-LIST.
 Each entry is (name default-ast); entries with no default contribute nothing."
   (free-vars-of-list (remove nil (mapcar #'second param-list))))
 
-(defun find-free-variables (ast)
-  "Find all free variables in AST that would need to be captured in a closure.
-Binding forms use ast-bound-names; others fall through to ast-children."
+(defun %free-vars-of-let (ast)
+  "Free variables of an AST-LET: binding init-exprs plus body, minus AST's own
+bound names."
+  (let ((binding-free (free-vars-of-list (mapcar #'cdr (ast-let-bindings ast))))
+        (body-free    (free-vars-of-list (ast-let-body ast))))
+    (set-difference (union binding-free body-free) (ast-bound-names ast))))
+
+(defun %free-vars-of-callable (ast)
+  "Free variables of an AST-CALLABLE (ast-lambda or ast-defun, sharing this one
+clause via their common accessors): body plus optional/key default
+expressions, minus AST's own bound names."
+  (let ((body-free    (free-vars-of-list (ast-callable-body ast)))
+        (default-free (union (free-vars-of-defaults (ast-callable-optional-params ast))
+                             (free-vars-of-defaults (ast-callable-key-params ast)))))
+    (set-difference (union body-free default-free) (ast-bound-names ast))))
+
+(defun %free-vars-of-local-fns (ast)
+  "Free variables of an AST-LOCAL-FNS (ast-flet or ast-labels): every binding's
+own body free variables, plus the outer body, minus AST's own bound names."
+  (let ((binding-free (free-vars-of-list
+                       (mapcar (lambda (b)
+                                 (make-ast-lambda :params (second b) :body (cddr b)))
+                               (ast-local-fns-bindings ast))))
+        (body-free (free-vars-of-list (ast-local-fns-body ast))))
+    (set-difference (union binding-free body-free) (ast-bound-names ast))))
+
+(defun %free-vars-of-mvb (ast)
+  "Free variables of an AST-MULTIPLE-VALUE-BIND: the values-form plus body,
+minus AST's own bound names."
+  (set-difference (union (find-free-variables (ast-mvb-values-form ast))
+                         (free-vars-of-list (ast-mvb-body ast)))
+                 (ast-bound-names ast)))
+
+(defun find-free-variables (ast &optional (k #'identity))
+  "Call (FUNCALL K result) with all free variables in AST that would need to
+be captured in a closure. Binding forms use ast-bound-names; others fall
+through to ast-children. Each binding form's own free-variable rule is a
+%FREE-VARS-OF-* helper above, so this dispatch stays a one-clause-per-kind
+table rather than growing a nested LET inside every TYPECASE arm. K defaults
+to #'IDENTITY, so an ordinary direct-style call (FIND-FREE-VARIABLES ast)
+still returns the result as a value, in the same style AST-SEARCH-CPS uses
+for tree search."
   (typecase ast
     ;; Leaves
-    (ast-var (list (ast-var-name ast)))
+    (ast-var (funcall k (list (ast-var-name ast))))
     ;; Assignment: the var itself is free (it must exist in some enclosing scope)
-    (ast-setq (union (list (ast-setq-var ast))
-                     (find-free-variables (ast-setq-value ast))))
+    (ast-setq
+     (find-free-variables
+      (ast-setq-value ast)
+      (lambda (value-free)
+        (funcall k (union (list (ast-setq-var ast)) value-free)))))
     ;; Binding forms: recurse into children, subtract bound names
-    (ast-let
-     (let ((binding-free (free-vars-of-list (mapcar #'cdr (ast-let-bindings ast))))
-           (body-free    (free-vars-of-list (ast-let-body ast))))
-       (set-difference (union binding-free body-free) (ast-bound-names ast))))
-    ;; ast-lambda and ast-defun are both ast-callable: one clause, shared accessors
-    (ast-callable
-     (let ((body-free    (free-vars-of-list (ast-callable-body ast)))
-           (default-free (union (free-vars-of-defaults (ast-callable-optional-params ast))
-                                (free-vars-of-defaults (ast-callable-key-params ast)))))
-       (set-difference (union body-free default-free) (ast-bound-names ast))))
-    (ast-local-fns
-     (let ((binding-free (free-vars-of-list
-                          (mapcar (lambda (b)
-                                    (make-ast-lambda :params (second b) :body (cddr b)))
-                                  (ast-local-fns-bindings ast))))
-           (body-free (free-vars-of-list (ast-local-fns-body ast))))
-       (set-difference (union binding-free body-free) (ast-bound-names ast))))
-     (ast-multiple-value-bind
-      (set-difference (union (find-free-variables (ast-mvb-values-form ast))
-                             (free-vars-of-list (ast-mvb-body ast)))
-                     (ast-bound-names ast)))
-     ;; All other nodes: generic traversal via ast-children
-     (t (free-vars-of-list (ast-children ast)))))
+    (ast-let (funcall k (%free-vars-of-let ast)))
+    (ast-callable (funcall k (%free-vars-of-callable ast)))
+    (ast-local-fns (funcall k (%free-vars-of-local-fns ast)))
+    (ast-multiple-value-bind (funcall k (%free-vars-of-mvb ast)))
+    ;; All other nodes: generic traversal via ast-children
+    (t (free-vars-of-list (ast-children ast) k))))
 
 (defun %escape-add-kind (kind acc)
   "Return ACC with KIND added unless already present."
@@ -184,12 +259,11 @@ Escape modes:
 
 SAFE-CONSUMERS is a list of uppercase function names that may consume the
 binding without constituting an escape."
-  (if (listp body-forms)
-      (reduce #'%escape-merge-kinds
-              (mapcar (lambda (f) (%escape-classify f binding-name safe-consumers))
-                      body-forms)
-              :initial-value nil)
-      nil))
+  (when (listp body-forms)
+    (reduce #'%escape-merge-kinds
+            (mapcar (lambda (f) (%escape-classify f binding-name safe-consumers))
+                    body-forms)
+            :initial-value nil)))
 
 (defun binding-escapes-in-body-p (body-forms binding-name &key (safe-consumers nil))
   "Return T when BINDING-NAME escapes from BODY-FORMS.
@@ -218,30 +292,43 @@ body actually needs according to free-variable analysis. The first occurrence
 of each variable is kept so shadowing preserves the innermost environment
 binding, and unused environment entries are removed before vm-captured-vars is
 emitted."
-  (let ((required (remove-duplicates required-vars :test #'eq))
-        (seen nil)
+  (let ((required (let ((table (make-hash-table :test #'eq)))
+                     (dolist (var required-vars table)
+                       (setf (gethash var table) t))))
+        (seen (make-hash-table :test #'eq))
         (trimmed nil))
     (dolist (entry captured-vars (nreverse trimmed))
       (let ((var (car entry)))
-        (when (and (member var required :test #'eq)
-                   (not (member var seen :test #'eq)))
-          (push var seen)
+        (when (and (gethash var required)
+                   (not (gethash var seen)))
+          (setf (gethash var seen) t)
           (push entry trimmed))))))
+
+(defun %group-multi-member (items key-fn)
+  "Group ITEMS into an EQUAL hash-table keyed by (FUNCALL KEY-FN item),
+preserving each group's original relative order. Keys with only one member
+are omitted, since a group of one shares nothing with anything else.
+
+Shared by GROUP-SHARED-SIBLING-CAPTURES and GROUP-SHAREABLE-CLOSURES, whose
+grouping logic was otherwise identical apart from the key each computes per
+item — paredit's similarity scan flagged the two MAPHASH bodies as an exact
+(similarity 1.0) clone."
+  (let ((all-groups (make-hash-table :test #'equal))
+        (shared-only (make-hash-table :test #'equal)))
+    (dolist (item items)
+      (push item (gethash (funcall key-fn item) all-groups)))
+    (maphash (lambda (key group)
+               (when (> (length group) 1)
+                 (setf (gethash key shared-only) (nreverse group))))
+             all-groups)
+    shared-only))
 
 (defun group-shared-sibling-captures (captured-var-lists)
   "Group sibling closure captures that share the same captured variable set.
 
 Returns an EQUAL hash-table mapping canonical capture keys to the list of
 captured-var alists using that key. Singleton groups are omitted."
-  (let ((all-groups (make-hash-table :test #'equal))
-        (shared-only (make-hash-table :test #'equal)))
-    (dolist (captures captured-var-lists)
-      (push captures (gethash (closure-capture-key captures) all-groups)))
-    (maphash (lambda (key group)
-               (when (> (length group) 1)
-                 (setf (gethash key shared-only) (nreverse group))))
-             all-groups)
-    shared-only))
+  (%group-multi-member captured-var-lists #'closure-capture-key))
 
 (defun %count-ast-calls (node binding-name)
   "Count direct AST-CALL occurrences of BINDING-NAME in NODE tree."
@@ -279,14 +366,7 @@ captured-var alists using that key. Singleton groups are omitted."
 CLOSURE-DESCRIPTORS is a list of plist-like records containing at least
   :entry-label and :captured-vars.
 Singleton groups are omitted."
-  (let ((all-groups (make-hash-table :test #'equal))
-        (shared-only (make-hash-table :test #'equal)))
-    (dolist (desc closure-descriptors)
-      (push desc (gethash (closure-sharing-key (getf desc :entry-label)
-                                               (getf desc :captured-vars))
-                          all-groups)))
-    (maphash (lambda (key group)
-               (when (> (length group) 1)
-                 (setf (gethash key shared-only) (nreverse group))))
-             all-groups)
-    shared-only))
+  (%group-multi-member closure-descriptors
+                       (lambda (desc)
+                         (closure-sharing-key (getf desc :entry-label)
+                                              (getf desc :captured-vars)))))

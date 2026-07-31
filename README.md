@@ -28,12 +28,15 @@ design.
 
 ```bash
 nix develop            # sbcl dev shell
-nix flake check        # compile check, tests, and coverage gate
-sbcl --script scripts/run-compile-check.lisp
-sbcl --script scripts/run-tests.lisp
-sbcl --script scripts/run-coverage.lisp   # SB-COVER report + gate; see the
-                                           # script's header for what the gate
-                                           # does and does not enforce
+nix flake check        # tests, the SB-COVER gate, formatting, and the docs build
+nix run .#test         # the suite on its own
+
+# Outside Nix, point CL_SOURCE_REGISTRY at a cl-weave checkout:
+CL_SOURCE_REGISTRY="/path/to/cl-weave//:" sbcl --script run-tests.lisp
+CL_SOURCE_REGISTRY="/path/to/cl-weave//:" sbcl --script run-coverage.lisp   # SB-COVER
+                                           # report + gate; see the script's
+                                           # header for what it does and does
+                                           # not enforce
 ```
 
 ## License
