@@ -45,9 +45,9 @@ a push here breaks your build with no change on your side and no warning.
 
 ## Changelog
 
-Changes are recorded in
-[CHANGELOG.md](https://github.com/nerima-lisp/cl-cc-ast/blob/main/CHANGELOG.md)
-in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. The release
-workflow extracts the section matching the pushed tag and uses it verbatim as
-the GitHub Release body, so the heading format `## [X.Y.Z] - YYYY-MM-DD` is
-load-bearing rather than cosmetic.
+Changes are recorded in the description of each
+[GitHub release](https://github.com/nerima-lisp/cl-cc-ast/releases). That
+description is the only canonical changelog; there is no `CHANGELOG.md` in the
+tree. Pushing a `vX.Y.Z` tag creates the release as an empty draft once
+`nix flake check` passes, and the maintainer writes the notes before
+publishing it.

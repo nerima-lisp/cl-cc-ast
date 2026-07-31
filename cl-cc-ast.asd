@@ -10,6 +10,13 @@
 ;;;; exactly that. Renaming the package breaks cl-cc-type and cl-cc, so it is
 ;;;; deliberately left for its own change.
 
+;;; This form comes first, before any defsystem. ASDF binds *package* to
+;;; ASDF-USER only for a file it loads itself; read any other way -- a REPL
+;;; `load`, an editor evaluating the buffer, flake.nix parsing :version -- the
+;;; file is read in whatever package happens to be current. Saying it makes the
+;;; file self-contained.
+(in-package #:asdf-user)
+
 (asdf:defsystem "cl-cc-ast"
   :description "cl-cc AST node types and protocol (ast-children, ast-bound-names)"
   :long-description "The dependency-free leaf of the cl-cc compiler: AST node
