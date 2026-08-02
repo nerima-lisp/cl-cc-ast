@@ -13,7 +13,7 @@
     # variable; it is a normal flake input now, which is what lets ASDF find
     # cl-weave through CL_SOURCE_REGISTRY like any other dependency.
     cl-weave = {
-      url = "github:nerima-lisp/cl-weave/v1.1.0";
+      url = "github:nerima-lisp/cl-weave/v1.1.4";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -23,7 +23,7 @@
     # cl-weave is: a bare `github:nerima-lisp/cl-nix-forge` follows its
     # default branch.
     cl-nix-forge = {
-      url = "github:nerima-lisp/cl-nix-forge/v0.1.0";
+      url = "github:nerima-lisp/cl-nix-forge/v0.4.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
