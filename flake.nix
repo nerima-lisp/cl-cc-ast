@@ -23,7 +23,7 @@
     # cl-weave is: a bare `github:nerima-lisp/cl-nix-forge` follows its
     # default branch.
     cl-nix-forge = {
-      url = "github:nerima-lisp/cl-nix-forge/v0.4.0";
+      url = "github:nerima-lisp/cl-nix-forge/v0.5.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
