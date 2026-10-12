@@ -22,13 +22,14 @@ is the single source of truth for AST shape.
 ### `ast-bound-names`
 
 ```lisp
-(ast-bound-names node) => list of symbols
+(ast-bound-names node) => list of binding names
 ```
 
-The variable names `node` newly binds. Meaningful for `ast-let`, `ast-lambda`,
-`ast-defun`, `ast-local-fns` (so `ast-flet` and `ast-labels`) and
-`ast-multiple-value-bind`; `nil` for everything else. For callables the list
-covers required, optional, rest and keyword parameters.
+The names `node` newly binds. Variable-binding forms return symbols.
+`ast-flet` and `ast-labels` return local function names, which may include
+`(cl:setf symbol)`. Meaningful for `ast-let`, `ast-lambda`, `ast-defun`,
+`ast-local-fns` and `ast-multiple-value-bind`; `nil` for everything else.
+For callables the list covers required, optional, rest and keyword parameters.
 
 ## Traversal
 
@@ -202,6 +203,16 @@ read `ast-source-file`, `ast-source-line`, `ast-source-column`,
 | Multiple values | `ast-values`, `ast-multiple-value-call`, `ast-multiple-value-prog1`, `ast-multiple-value-bind` |
 | Conditions | `ast-catch`, `ast-throw`, `ast-unwind-protect`, `ast-handler-case` |
 | CLOS | `ast-defclass`, `ast-slot-def`, `ast-defgeneric`, `ast-defmethod`, `ast-make-instance`, `ast-slot-value`, `ast-set-slot-value`, `ast-set-gethash` |
+
+### Function definition names
+
+`make-ast-defun` and `(setf ast-defun-name)` accept a symbol or a proper
+two-element list `(cl:setf symbol)`. The constructor and accessor retain the
+original name object, including uninterned symbols. `ast-to-sexp` uses that
+same name object when rendering a `defun` form.
+
+Malformed lists, non-symbol accessor names, and symbols merely named `SETF`
+from another package are not function names and signal `type-error`.
 
 Some accessors are abbreviated where the full name would be unwieldy:
 `ast-multiple-value-bind` uses `ast-mvb-vars`, `ast-mvb-values-form` and

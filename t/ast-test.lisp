@@ -57,4 +57,51 @@
       (setf (ast-namespace node) "App\\Updated"
             (ast-imports node) '("Vendor\\Other"))
       (expect (ast-namespace node) :to-equal "App\\Updated")
-      (expect (ast-imports node) :to-equal '("Vendor\\Other"))))))
+      (expect (ast-imports node) :to-equal '("Vendor\\Other")))))
+
+(describe "strict DEFUN function names"
+  (it-sequential "DEFUN constructor retains ordinary symbol names"
+    (dolist (name (list 'foo nil (make-symbol "LOCAL-NAME")))
+      (expect (eq (ast-defun-name (make-ast-defun :name name)) name) :to-be-truthy)))
+
+  (it-sequential "DEFUN setter retains ordinary symbol names"
+    (let ((node (make-ast-defun :name 'foo))
+          (name (make-symbol "REPLACEMENT")))
+      (setf (ast-defun-name node) name)
+      (expect (eq (ast-defun-name node) name) :to-be-truthy)
+      (setf (ast-defun-name node) nil)
+      (expect (null (ast-defun-name node)) :to-be-truthy)))
+
+  (it-sequential "DEFUN constructor retains exact SETF name identity"
+    (dolist (symbol (list 'foo nil (make-symbol "ACCESSOR")))
+      (let* ((name (list 'cl:setf symbol))
+             (node (funcall (fdefinition 'make-ast-defun) :name name)))
+        (expect (eq (ast-defun-name node) name) :to-be-truthy)
+        (expect (eq (car (ast-defun-name node)) 'cl:setf) :to-be-truthy)
+        (expect (eq (cadr (ast-defun-name node)) symbol) :to-be-truthy))))
+
+  (it-sequential "DEFUN setter accepts exact SETF names and returns to symbols"
+    (let* ((node (make-ast-defun :name 'foo))
+           (symbol (make-symbol "ACCESSOR"))
+           (name (list 'cl:setf symbol)))
+      (expect (eq (funcall (fdefinition '(setf ast-defun-name)) name node) name)
+              :to-be-truthy)
+      (expect (eq (ast-defun-name node) name) :to-be-truthy)
+      (expect (eq (cadr (ast-defun-name node)) symbol) :to-be-truthy)
+      (setf (ast-defun-name node) 'foo)
+      (expect (eq (ast-defun-name node) 'foo) :to-be-truthy)))
+
+  (it-sequential "DEFUN constructor and setter reject malformed or aliased names"
+    (let ((node (make-ast-defun :name 'foo)))
+      (dolist (name (list 42 "FOO" '(cl:setf) '(cl:setf foo bar)
+                         '(cl:setf 42) '(cl:setf . foo)
+                         '(cl:setf foo . bar) '(function foo)
+                         (list (make-symbol "SETF") 'foo)))
+        (let ((constructor-rejected nil) (setter-rejected nil))
+          (handler-case (make-ast-defun :name name)
+            (type-error () (setf constructor-rejected t)))
+          (handler-case (setf (ast-defun-name node) name)
+            (type-error () (setf setter-rejected t)))
+          (expect constructor-rejected :to-be-truthy)
+          (expect setter-rejected :to-be-truthy)
+          (expect (eq (ast-defun-name node) 'foo) :to-be-truthy)))))))
