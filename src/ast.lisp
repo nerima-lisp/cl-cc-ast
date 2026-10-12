@@ -79,7 +79,7 @@ top-to-bottom exactly as hand-written forms would."
 
   (ast-defun (:include ast-callable)
     "Top-level function definition AST node."
-    (name nil :type symbol)
+    (name nil :type (or symbol (cons (eql cl:setf) (cons symbol null))))
     (documentation nil :type (or null string)))
 
   (ast-defvar ()

@@ -187,7 +187,22 @@ compare AST-TO-SEXP's output against."
   (it-sequential "defun without documentation omits the string"
     (expect (ast-to-sexp (make-ast-defun :name 'foo :params '(a)
                                          :body (list (make-ast-var :name 'a))))
-            :to-equal '(defun foo (a) a))))
+            :to-equal '(defun foo (a) a)))
+
+  (it-sequential "SETF DEFUN roundtrip preserves exact function name and body"
+    (let* ((symbol (make-symbol "ACCESSOR"))
+           (name (list 'cl:setf symbol))
+           (form (ast-to-sexp
+                  (funcall (fdefinition 'make-ast-defun) :name name :params '(value object)
+                                  :documentation "setter"
+                                  :declarations '((optimize speed))
+                                  :body (list (make-ast-var :name 'value))))))
+      (expect (eq (second form) name) :to-be-truthy)
+      (expect (eq (car (second form)) 'cl:setf) :to-be-truthy)
+      (expect (eq (cadr (second form)) symbol) :to-be-truthy)
+      (expect form :to-equal
+              (list 'defun name '(value object) "setter"
+                    '(optimize speed) 'value)))))
 
 (describe "ast-to-sexp — handler-case clause variable presence"
   (it-sequential "clause with a condition variable"

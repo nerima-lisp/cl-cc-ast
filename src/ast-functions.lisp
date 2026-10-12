@@ -91,7 +91,7 @@ All structural knowledge about AST shapes lives here."
     (t nil)))
 
 (defun ast-bound-names (node)
-  "Return the list of variable names newly bound by NODE.
+  "Return the names newly bound by NODE, including local function names.
 Only meaningful for binding forms (let, lambda, defun, flet, labels, mvb)."
   (typecase node
     (ast-let (mapcar #'car (ast-let-bindings node)))
