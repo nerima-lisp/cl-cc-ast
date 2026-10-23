@@ -47,6 +47,10 @@
       (expect (search "t.lisp:1" report) :to-be-truthy)
       (expect (search "bad thing: 42" report) :to-be-truthy))))
 
+(describe "test runner failure control"
+  (it-sequential "reports a failing assertion"
+    (expect nil :to-be-truthy)))
+
 (describe "namespace / imports node metadata"
   (it-sequential "AST nodes store and update optional namespace/imports metadata"
     (let ((node (make-ast-int :value 1
