@@ -138,6 +138,42 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          orphanTestScript = pkgs.writeText "check-orphan-tests.lisp" ''
+            (require :asdf)
+
+            (defun lisp-source-file-p (pathname)
+              (equalp (pathname-type pathname) "lisp"))
+
+            (defun component-source-files (component)
+              (append
+               (when (and (typep component 'asdf:source-file)
+                          (lisp-source-file-p (asdf:component-pathname component)))
+                 (list (asdf:component-pathname component)))
+               (when (typep component 'asdf:module)
+                 (loop for child in (asdf:component-children component)
+                       append (component-source-files child)))))
+
+            (defun lisp-files-under (directory)
+              (append
+               (remove-if-not #'lisp-source-file-p (uiop:directory-files directory))
+               (loop for subdirectory in (uiop:subdirectories directory)
+                     append (lisp-files-under subdirectory))))
+
+            (let* ((system (asdf:find-system "cl-cc-ast/test"))
+                   (test-directory (merge-pathnames #P"t/" (asdf:system-source-directory system)))
+                   (actual (mapcar #'namestring (lisp-files-under test-directory)))
+                   (declared (mapcar #'namestring (component-source-files system)))
+                   (orphans (set-difference actual declared :test #'string=)))
+              (unless actual
+                (error "No Lisp source files found under t/"))
+              (when orphans
+                (format *error-output* "Lisp source files under t/ missing from cl-cc-ast/test:~%")
+                (dolist (pathname (sort orphans #'string<))
+                  (format *error-output* "  ~a~%" pathname))
+                (error "~d orphan Lisp source file(s)" (length orphans)))
+              (format t "Checked ~d Lisp source file(s) under t/; 0 orphan file(s).~%"
+                      (length actual)))
+          '';
         in
         {
           default =
@@ -153,6 +189,22 @@
                 export HOME="$TMPDIR/home"
                 mkdir -p "$HOME" "$out"
                 timeout 120 sbcl --script ${self}/run-tests.lisp
+                touch "$out/passed"
+              '';
+
+          orphan-tests =
+            pkgs.runCommand "cl-cc-ast-orphan-tests"
+              {
+                nativeBuildInputs = [
+                  pkgs.sbcl
+                  pkgs.coreutils
+                ];
+                CL_SOURCE_REGISTRY = sourceRegistry;
+              }
+              ''
+                export HOME="$TMPDIR/home"
+                mkdir -p "$HOME" "$out"
+                sbcl --script ${orphanTestScript}
                 touch "$out/passed"
               '';
 
