@@ -4,7 +4,7 @@
   :facade-packages ("cl-cc/ast")
   :domain-package "cl-cc/ast/nodes"
   :infra-package nil
-  :depends-on ())
+  :depends-on ("closure-analysis"))
  (:feature "closure-analysis"
   :source-dirs ("src/closure-analysis")
   :test-dir "t/closure-analysis"
