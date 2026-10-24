@@ -23,7 +23,7 @@
     # cl-weave is: a bare `github:nerima-lisp/cl-nix-forge` follows its
     # default branch.
     cl-nix-forge = {
-      url = "github:nerima-lisp/cl-nix-forge/v0.5.0";
+      url = "github:nerima-lisp/cl-nix-forge/v0.7.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -138,6 +138,7 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          cl = cl-nix-forge.lib.${system};
           orphanTestScript = pkgs.writeText "check-orphan-tests.lisp" ''
             (require :asdf)
 
@@ -176,6 +177,28 @@
           '';
         in
         {
+          feature-lint = cl.mkFeatureLintCheck {
+            src = ./.;
+            featureDefinitions = "nix/feature-dependencies.sexp";
+            glossary = "docs/src/reference/glossary.md";
+            glossaryHeadingPrefix = "## ";
+            exportSurface = "t/export-surface.txt";
+            mode = "transition";
+            legacyInternalRefs = "t/legacy-internal-refs.sexp";
+            forbiddenNames = [
+              "phases"
+              "misc"
+              "utils"
+              "helpers"
+            ];
+            numberedPrefixes = [
+              "FR-"
+              "W"
+            ];
+            packagePrefix = "cl-cc/ast/";
+            infraSuffix = "/infra";
+          };
+
           default =
             pkgs.runCommand "cl-cc-ast-tests"
               {
