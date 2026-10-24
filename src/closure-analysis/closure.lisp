@@ -1,13 +1,11 @@
-;;;; compile/closure.lisp - Closure and Free Variable Analysis
+;;;; Closure and Free Variable Analysis
 (in-package :cl-cc/ast/closure-analysis)
 
 (defun find-mutated-variables (ast &optional (k #'identity))
-  "Call (FUNCALL K result) with all variable names that are targets of SETQ in
-AST. Uses ast-children for generic traversal — new node types work
-automatically. K defaults to #'IDENTITY, so an ordinary direct-style call
-(FIND-MUTATED-VARIABLES ast) still returns the result as a value; a caller
-that wants control over what happens next passes its own continuation, in the
-same style AST-SEARCH-CPS does for tree search."
+  "Call (FUNCALL K result) with every variable name that appears as a SETQ
+target in AST. The analysis descends through ast-children, so add an
+ast-children clause for new node types whose descendants it should visit.
+K defaults to the identity function, so direct-style calls return the result."
   (if (typep ast 'ast-setq)
       (mutated-vars-of-list
        (ast-children ast)
@@ -40,12 +38,9 @@ body captures as a pseudo-lambda closure boundary."
           :initial-value nil))
 
 (defun %captured-in-form (form params &optional (k #'identity))
-  "Call (FUNCALL K result) with the variables from PARAMS that FORM's own
-closure boundaries capture, or that recursing into FORM's children captures
-transitively. One clause of FIND-CAPTURED-IN-CHILDREN's per-form logic,
-factored out so that function reads as a CPS fold over BODY-FORMS rather than
-a mutable accumulator threaded through a TYPECASE. K defaults to #'IDENTITY
-for ordinary direct-style calls."
+  "Call (FUNCALL K result) with the variables from PARAMS that closure
+boundaries in FORM capture, including captures found while recursing through
+FORM children. K defaults to the IDENTITY function for direct-style calls."
   (typecase form
     ;; Lambda/defun boundaries: capture free vars that overlap with PARAMS.
     ;; ast-lambda and ast-defun are both ast-callable, so FIND-FREE-VARIABLES'
@@ -61,12 +56,10 @@ for ordinary direct-style calls."
     (t (find-captured-in-children (ast-children form) params k))))
 
 (defun find-captured-in-children (body-forms params &optional (k #'identity))
-  "Call (FUNCALL K result) with the variables that inner lambdas/defuns in
-BODY-FORMS capture as free variables. PARAMS are the current scope's bound
-variables — only those are candidates for boxing. Uses ast-children for
-generic traversal. K defaults to #'IDENTITY, so an ordinary direct-style call
-(FIND-CAPTURED-IN-CHILDREN body-forms params) still returns the result as a
-value."
+  "Call (FUNCALL K result) with PARAMS variables captured by inner lambda and
+defun nodes or local-function definitions in FLET and LABELS forms. Uses
+ast-children for generic traversal. K defaults to the identity function for
+direct-style calls."
   (if (null body-forms)
       (funcall k nil)
       (%captured-in-form
@@ -176,7 +169,6 @@ every descendant has been tried — is what makes a non-mention NIL."
                   (lambda () nil)))
 
 (defun %escape-mentions-forms-p (forms binding-name)
-  "Return T if any form in FORMS references BINDING-NAME."
   (some (lambda (f) (%escape-mentions-node-p f binding-name)) forms))
 
 (defun %escape-classify-children (node binding-name safe-consumers)
@@ -196,9 +188,7 @@ every descendant has been tried — is what makes a non-mention NIL."
 
 (defparameter +external-call-primitive-names+ '("APPLY" "FUNCALL")
   "Uppercase names of call operators that pass their arguments to an
-unknown callee. Named and factored out of %ESCAPE-CLASSIFY so the data this
-clause matches against is legible independent of the escape-classification
-logic built on top of it.")
+unknown callee.")
 
 (defun %escape-classify-call (node binding-name safe-consumers)
   "Classify escapes through NODE. Safe consumers suppress direct references only."
@@ -242,7 +232,6 @@ logic built on top of it.")
              (when (typep func 'ast-node) (%escape-classify func binding-name safe-consumers))))))))
 
 (defun %escape-classify (node binding-name safe-consumers)
-  "Classify how BINDING-NAME escapes through NODE."
   (typecase node
     (ast-var        (when (eq (ast-var-name node) binding-name) (list :return)))
     (ast-lambda     (%escape-capture-kinds (ast-lambda-body node)    binding-name safe-consumers))
@@ -263,15 +252,24 @@ logic built on top of it.")
     (t (%escape-classify-children node binding-name safe-consumers))))
 
 (defun binding-escape-kinds-in-body (body-forms binding-name &key (safe-consumers nil))
-  "Return a list of conservative escape kinds for BINDING-NAME in BODY-FORMS.
+  "Return AST-use tags for BINDING-NAME in BODY-FORMS.
 
-Escape modes:
-- :return         the binding flows out as a direct value/result
-- :capture        the binding is captured by an inner closure/local function
-- :external-call  the binding is passed to APPLY/FUNCALL or an unknown callee
+Tags describe conservative structural classifications, not control-flow returns
+or proven runtime escapes:
+- :return         a variable node naming the binding was visited
+- :capture        a reference occurs in an inner closure, a FLET or LABELS body,
+                  or their local-function definitions
+- :external-call  every AST-APPLY adds this tag; AST-CALL to APPLY/FUNCALL adds
+                  it unless that operator is safe; other calls add it when
+                  argument analysis finds a tagged use and the callee is not safe
 
-SAFE-CONSUMERS accepts symbols matched by identity or uppercase strings matched
-by name. The list is disabled inside local-function scopes."
+SAFE-CONSUMERS applies to AST-CALL nodes. It accepts symbols matched by identity
+and strings matched exactly against an operator symbol name (normally uppercase
+for unescaped Common Lisp symbols). A matching call suppresses only a direct
+argument that is exactly a variable node naming the binding; nested expressions
+in other arguments are still analyzed. An explicit AST-APPLY remains tagged.
+The list is ignored in FLET or LABELS bodies and in their local-function
+definitions."
   (when (listp body-forms)
     (reduce #'%escape-merge-kinds
             (mapcar (lambda (f) (%escape-classify f binding-name safe-consumers))
@@ -279,21 +277,26 @@ by name. The list is disabled inside local-function scopes."
             :initial-value nil)))
 
 (defun binding-escapes-in-body-p (body-forms binding-name &key (safe-consumers nil))
-  "Return T when BINDING-NAME escapes from BODY-FORMS.
+  "Return T when BINDING-NAME has an AST-use tag in BODY-FORMS.
 
-This is a conservative intra-procedural escape analysis helper layered on top
-of BINDING-ESCAPE-KINDS-IN-BODY. SAFE-CONSUMERS accepts symbols matched by
-identity or uppercase strings matched by name; the list is disabled inside
-local-function scopes."
+This conservative intra-procedural helper returns T when
+BINDING-ESCAPE-KINDS-IN-BODY returns any tag. The tags describe AST structure
+and call classification, and do not prove a runtime escape. SAFE-CONSUMERS
+accepts symbols matched by identity and strings matched exactly against an
+operator symbol name (normally uppercase for unescaped Common Lisp symbols).
+A matching call suppresses only a direct argument that is exactly a variable
+node naming the binding; nested expressions in other arguments are still
+analyzed. The list is ignored in a FLET or LABELS body and in their
+local-function definitions."
   (not (null (binding-escape-kinds-in-body body-forms binding-name
                                            :safe-consumers safe-consumers))))
 
 (defun closure-capture-key (captured-vars)
-  "Return a canonical key for CAPTURED-VARS.
+  "Return captured variable symbols sorted by symbol-name.
 
-CAPTURED-VARS is an alist of (var . reg). The key ignores order and groups by
-captured variable names only, which is enough to detect sibling closures that
-could share one environment record."
+CAPTURED-VARS is an alist of (var . reg). Duplicate symbols are removed by
+identity. Distinct same-named symbols may appear in either relative order, so
+reordering those inputs is not guaranteed to produce an equal key."
   (sort (remove-duplicates (mapcar #'car captured-vars) :test #'eq)
         #'string< :key #'symbol-name))
 
@@ -319,14 +322,12 @@ emitted."
           (push entry trimmed))))))
 
 (defun %group-multi-member (items key-fn)
-  "Group ITEMS into an EQUAL hash-table keyed by (FUNCALL KEY-FN item),
-preserving each group's original relative order. Keys with only one member
-are omitted, since a group of one shares nothing with anything else.
+  "Group ITEMS into an EQUAL hash table keyed by (FUNCALL KEY-FN item),
+preserving member order. Omit groups with only one member, since they share
+nothing.
 
-Shared by GROUP-SHARED-SIBLING-CAPTURES and GROUP-SHAREABLE-CLOSURES, whose
-grouping logic was otherwise identical apart from the key each computes per
-item — paredit's similarity scan flagged the two MAPHASH bodies as an exact
-(similarity 1.0) clone."
+This helper is shared by GROUP-SHARED-SIBLING-CAPTURES and
+GROUP-SHAREABLE-CLOSURES; the callers provide their respective grouping keys."
   (let ((all-groups (make-hash-table :test #'equal))
         (shared-only (make-hash-table :test #'equal)))
     (dolist (item items)
@@ -345,7 +346,8 @@ captured-var alists using that key. Singleton groups are omitted."
   (%group-multi-member captured-var-lists #'closure-capture-key))
 
 (defun %count-ast-calls (node binding-name)
-  "Count direct AST-CALL occurrences of BINDING-NAME in NODE tree."
+  "Count AST-CALL nodes with BINDING-NAME in their function slot within NODE.
+Recurse through AST children except AST-CALL function slots."
   (typecase node
     (ast-call
      (+ (if (eq (ast-call-func node) binding-name) 1 0)
@@ -358,7 +360,9 @@ captured-var alists using that key. Singleton groups are omitted."
              :initial-value 0))))
 
 (defun binding-direct-call-count-in-body (body-forms binding-name)
-  "Count direct AST-CALL occurrences of BINDING-NAME in BODY-FORMS."
+  "Count AST-CALL nodes whose function slot is BINDING-NAME in BODY-FORMS.
+Recurse through non-call node children and AST-CALL arguments, but not an
+AST-valued function slot."
   (if (listp body-forms)
       (reduce #'+ (mapcar (lambda (n) (%count-ast-calls n binding-name)) body-forms)
               :initial-value 0)

@@ -1,6 +1,7 @@
 # Recipes
 
-Every example below assumes the system is loaded and `:cl-cc/ast` is in scope.
+After making the system available to ASDF (see [Getting started](../getting-started.md)),
+run this setup once before using the examples below:
 
 ```lisp
 (asdf:load-system "cl-cc-ast")
@@ -9,8 +10,8 @@ Every example below assumes the system is loaded and `:cl-cc/ast` is in scope.
 
 ## Walk a tree without knowing its shape
 
-`ast-children` is the only structural knowledge you need. A whole-tree fold is
-four lines:
+`ast-children` is the only structural knowledge you need. A whole-tree fold
+looks like this:
 
 ```lisp
 (defun count-nodes (node)
@@ -55,16 +56,12 @@ Free-variable analysis answers "what does this body need from outside?".
 `x` is a parameter, so it is bound; `y` is not, so a closure over this lambda
 has to capture it.
 
-To go the other way — "which of *my* variables do inner closures take?" — use
-`find-captured-in-children`, which takes the body forms and the current
-scope's bound names and returns only the overlap.
-
 ## Trim an environment down to what is actually used
 
 Compiler environments accumulate candidate bindings. `trim-captured-vars`
 filters an `(var . register)` alist against the set free-variable analysis
-says is required, keeping the first occurrence of each variable so that
-shadowing preserves the innermost binding:
+says is required. The input alist must list the innermost binding first; the
+function keeps the first occurrence of each required variable:
 
 ```lisp
 (trim-captured-vars '((a . r1) (b . r2) (a . r3)) '(a))
@@ -73,10 +70,12 @@ shadowing preserves the innermost binding:
 
 ## Detect closures that can share an environment
 
-Two sibling closures capturing the same variable set can share one environment
-record. `closure-capture-key` canonicalises a capture set (order-insensitive,
-duplicate-free), and `group-shared-sibling-captures` buckets by that key,
-dropping singleton groups because a group of one shares nothing:
+Two sibling closures whose `closure-capture-key` values match can share one
+environment record. `closure-capture-key` sorts captured symbols by name and
+removes duplicate symbols. `group-shared-sibling-captures` buckets by that key,
+dropping singleton groups because a group of one shares nothing. Same-named
+symbols from different packages may not produce the same key after reordering;
+see the [API reference](../reference/api.md#closure-capture-key):
 
 ```lisp
 (closure-capture-key '((b . r2) (a . r1) (a . r3)))
@@ -96,13 +95,9 @@ means they can be one closure object rather than two.
 ;; => T
 ```
 
-`binding-escape-kinds-in-body` returns *why* rather than just whether — some
-subset of `:return`, `:capture` and `:external-call`. When a known-safe
-function consumes the binding, list it in `:safe-consumers` (uppercase
-strings) so it stops counting as an escape.
-
-`binding-one-shot-p` combines the escape check with a call count: a binding
-called exactly once and escaping nowhere can be inlined instead of allocated.
+The predicate is true because `f` is passed directly to `funcall`. See the
+[API reference](../reference/api.md#binding-escape-kinds-in-body) for the
+escape tags and `safe-consumers` rules.
 
 ## Print a tree back as source
 
