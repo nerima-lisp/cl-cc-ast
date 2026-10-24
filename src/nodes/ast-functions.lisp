@@ -10,7 +10,7 @@
 ;;;; Depends on ast.lisp (all AST struct definitions, ast-source-* accessors).
 ;;;; Load order: immediately after ast.lisp.
 
-(in-package :cl-cc/ast)
+(in-package :cl-cc/ast/nodes)
 
 ;;; ─── AST Data Layer ───────────────────────
 ;;;

@@ -1,0 +1,14 @@
+((:feature "nodes"
+  :source-dirs ("src/nodes")
+  :test-dir "t/nodes"
+  :facade-packages ("cl-cc/ast")
+  :domain-package "cl-cc/ast/nodes"
+  :infra-package nil
+  :depends-on ())
+ (:feature "closure-analysis"
+  :source-dirs ("src/closure-analysis")
+  :test-dir "t/closure-analysis"
+  :facade-packages ("cl-cc/ast")
+  :domain-package "cl-cc/ast/closure-analysis"
+  :infra-package nil
+  :depends-on ("nodes")))

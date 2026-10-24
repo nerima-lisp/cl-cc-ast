@@ -1,7 +1,9 @@
 # API reference
 
-Everything below is exported from `:cl-cc/ast`. Node structures follow
-`defstruct` convention throughout: a node kind `ast-foo` gives you
+Feature packages named in the [Glossary](glossary.md) own these symbols; the
+`:cl-cc/ast` facade imports and reexports the same public symbols. Everything
+below is available from `:cl-cc/ast`. Node structures follow `defstruct`
+convention throughout: a node kind `ast-foo` gives you
 `make-ast-foo`, `ast-foo-p`, and one accessor per slot, all exported.
 
 ## Data protocol
@@ -43,8 +45,7 @@ Depth-first search over `node` and its `ast-children` descendants. Calls
 `(funcall success match)` on the first node satisfying `predicate`; calls
 `(funcall failure)` with no arguments once the subtree is exhausted. Each
 recursive step wraps `failure` in a continuation that resumes at the next
-sibling, so backtracking is function composition rather than mutable loop
-state.
+sibling.
 
 ### `ast-find-first`
 
@@ -59,12 +60,15 @@ state.
 
 | Name | Signature | Returns |
 |---|---|---|
-| `find-free-variables` | `(ast)` | Variables referenced but not bound in `ast` |
-| `free-vars-of-list` | `(nodes)` | Union of `find-free-variables` over a list |
+| `find-free-variables` | `(ast &optional k)` | Variables referenced but not bound in `ast` |
+| `free-vars-of-list` | `(nodes &optional k)` | Union of `find-free-variables` over a list |
 | `free-vars-of-defaults` | `(param-list)` | Free variables in optional/keyword default forms |
-| `find-mutated-variables` | `(ast)` | Variables that are `setq` targets |
-| `mutated-vars-of-list` | `(nodes)` | Union of `find-mutated-variables` over a list |
-| `find-captured-in-children` | `(body-forms params)` | Which of `params` an inner closure captures |
+| `find-mutated-variables` | `(ast &optional k)` | Variables that are `setq` targets |
+| `mutated-vars-of-list` | `(nodes &optional k)` | Union of `find-mutated-variables` over a list |
+| `find-captured-in-children` | `(body-forms params &optional k)` | Which of `params` are captured by inner lambdas, defuns, or local functions in `flet`/`labels` |
+
+The optional `k` argument defaults to `#'identity`. When supplied, the function
+calls `k` with the computed result and returns whatever `k` returns.
 
 ### `binding-escape-kinds-in-body`
 
@@ -72,16 +76,24 @@ state.
 (binding-escape-kinds-in-body body-forms binding-name &key safe-consumers) => list
 ```
 
-Conservative, intra-procedural escape analysis. Returns some subset of:
+Conservative, intra-procedural analysis of AST uses. Returns some subset of
+escape tags; they do not prove a runtime escape:
 
 | Kind | Meaning |
 |---|---|
-| `:return` | The binding flows out as a direct value or result |
-| `:capture` | An inner closure or local function captures it |
-| `:external-call` | It is passed to `apply`, `funcall`, or an unknown callee |
+| `:return` | A variable node naming the binding was visited; this is not a control-flow return. |
+| `:capture` | An inner `lambda`, `defun`, or `defmethod` body, or a `flet`/`labels` body or local-function definition, refers to the binding. |
+| `:external-call` | Every explicit `ast-apply` adds this tag. An `ast-call` to `apply` or `funcall` adds it unless that operator is in `safe-consumers`; other non-safe calls add it when an argument contains a tagged use. |
 
-`safe-consumers` is a list of uppercase function-name strings that may consume
-the binding without that counting as an escape.
+`safe-consumers` accepts symbols matched by identity and strings matched exactly
+against the operator's symbol name (normally uppercase for unescaped Common Lisp
+symbols). A matching direct variable argument receives no tag; nested
+expressions in other arguments are still analyzed.
+For `ast-call` nodes, this check runs before the `apply` and `funcall` rule, so
+listing either operator can suppress `:external-call` for a skipped direct
+argument. It does not suppress the tag added by an explicit `ast-apply` node.
+The list is ignored in a `flet` or `labels` body and in their local-function
+definitions.
 
 ### `binding-escapes-in-body-p`
 
@@ -97,8 +109,11 @@ True when `binding-escape-kinds-in-body` returns anything at all.
 (binding-direct-call-count-in-body body-forms binding-name) => integer
 ```
 
-How many times `binding-name` appears as the *callee* of a call in
-`body-forms`. Accepts a single node as well as a list.
+Counts `ast-call` nodes whose function slot is `binding-name`. It recurses
+through non-call node children and each `ast-call`'s arguments, but not an
+AST-valued function slot. An `ast-apply` node itself does not count, although
+its children are traversed. `BODY-FORMS` must be a list; non-list values return
+zero.
 
 ### `binding-one-shot-p`
 
@@ -118,17 +133,20 @@ condition under which it can be inlined rather than allocated.
 ```
 
 Filters an alist of `(var . register)` candidates down to `required-vars`,
-keeping the first occurrence of each variable so shadowing preserves the
-innermost binding.
+keeping the first occurrence of each required variable. The input alist must
+list the innermost binding first.
 
 ### `closure-capture-key`
 
 ```lisp
-(closure-capture-key captured-vars) => sorted list of symbols
+(closure-capture-key captured-vars) => list of symbols, sorted by name
 ```
 
-Canonical key for a capture set: variable names only, sorted, duplicate-free.
-Two closures with the same key capture the same variables.
+Returns the captured symbols sorted by `symbol-name`, removing duplicates by
+symbol identity. Distinct symbols with the same name remain separate, but their
+relative order is unspecified. Capture sets containing same-named symbols from
+different packages may therefore produce different keys when their input order
+differs.
 
 ### `closure-sharing-key`
 

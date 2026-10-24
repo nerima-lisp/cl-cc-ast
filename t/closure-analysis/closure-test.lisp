@@ -1,12 +1,4 @@
-;;;; t/closure-test.lisp — closure / free-variable / escape analysis (cl-weave).
-;;;;
-;;;; Covers every public helper in src/closure.lisp: mutation tracking, free-
-;;;; variable analysis, escape classification, and the closure-sharing
-;;;; grouping helpers used by downstream closure conversion. Plain single-call
-;;;; assertions use helpers-cases.lisp's DEFINE-CASES table macro; cases that
-;;;; need shared setup or multiple assertions stay as hand-written IT-SEQUENTIAL.
-
-(in-package :cl-cc-ast/test)
+(in-package :cl-cc/ast/closure-analysis/test)
 
 (defun %sorted-symbols (symbols)
   "Sort SYMBOLS by name so set-like results compare deterministically."
