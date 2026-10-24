@@ -51,22 +51,22 @@ compare AST-TO-SEXP's output against."
 
 (defun %assert-facade-export-surface ()
   (flet ((read-rows ()
-           (with-open-file (stream
-                            (asdf:system-relative-pathname
-                             "cl-cc-ast/test"
-                             "t/export-surface.txt"))
-             (let ((*package* (find-package "COMMON-LISP-USER"))
-                   (*read-eval* nil))
-               (loop for row = (read stream nil :eof)
-                     until (eq row :eof)
-                     collect row)))))
+                    (with-open-file (stream
+                                     (asdf:system-relative-pathname
+                                      "cl-cc-ast/test"
+                                      "t/export-surface.txt"))
+                      (let ((*package* (find-package "COMMON-LISP-USER"))
+                            (*read-eval* nil))
+                        (let ((rows (read stream nil :eof)))
+                          (expect (eq (read stream nil :eof) :eof) :to-be-truthy)
+                          rows)))))
     (let* ((rows (read-rows))
            (facade-package (find-package "CL-CC/AST")))
       (expect facade-package :to-be-truthy)
       (expect (length rows) :to-equal 272)
       (let ((actual-names nil))
         (do-external-symbols (symbol facade-package)
-          (push (symbol-name symbol) actual-names))
+                             (push (symbol-name symbol) actual-names))
         (expect (sort actual-names
                       (lambda (left right) (string< left right)))
                 :to-equal
