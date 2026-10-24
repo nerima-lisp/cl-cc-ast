@@ -7,21 +7,24 @@
 ;;;; cl-weave is loaded before the SB-COVER proclaim so the framework itself
 ;;;; is not instrumented; only cl-cc-ast is force-recompiled underneath it.
 ;;;;
-;;;; The gate excludes ast.lisp and package.lisp from the *threshold* (both
-;;;; still appear in the HTML report). ast.lisp is ~40 DEFSTRUCT forms with no
-;;;; branching logic; SB-COVER instruments each slot's default-value form as
-;;;; a coverable expression, but DEFSTRUCT's macroexpansion evaluates that
-;;;; form only at the ORIGINAL struct's own construction with the slot
-;;;; omitted — verified empirically that calling every constructor with zero
-;;;; arguments (see t/ast-analysis-test.lisp) does not move the number, and
-;;;; that (optimize (debug 3)) does not either. package.lisp is a single
-;;;; DEFPACKAGE form with the same one-shot-at-load-time nature. Gating on
+;;;; The gate excludes src/nodes/ast.lisp and package definition files from the
+;;;; threshold (all still appear in the HTML report). src/nodes/ast.lisp
+;;;; contains ~40 DEFSTRUCT forms with no branching logic. SB-COVER
+;;;; instruments each slot's default-value form as a coverable expression,
+;;;; but DEFSTRUCT's macroexpansion evaluates that form only at the ORIGINAL
+;;;; struct's own construction with the slot omitted — verified empirically
+;;;; that calling every constructor with zero
+;;;; arguments (see t/nodes/ast-test.lisp) does not move the number, and
+;;;; that (optimize (debug 3)) does not either. Package definition files each
+;;;; contain a DEFPACKAGE form with the same one-shot-at-load-time nature. Gating on
 ;;;; these would make the threshold permanently unsatisfiable regardless of
-;;;; test quality. The remaining logic files (ast-functions.lisp,
-;;;; ast-roundtrip.lisp, closure.lisp) are held to a near-100% floor; what's
+;;;; test quality. The remaining logic files (src/nodes/ast-functions.lisp,
+;;;; src/nodes/ast-roundtrip.lisp, and src/closure-analysis/closure.lisp) are
+;;;; held to a near-100% floor; what's
 ;;;; left there after closing every real gap is the same one-shot-form
 ;;;; artifact: IN-PACKAGE, DEFGENERIC, DEFPARAMETER, and every &OPTIONAL/&KEY
-;;;; default-value form — including the #'IDENTITY defaults CLOSURE.LISP's
+;;;; default-value form — including the #'IDENTITY defaults in
+;;;; src/closure-analysis/closure.lisp's
 ;;;; CPS-style traversals (FIND-MUTATED-VARIABLES, MUTATED-VARS-OF-LIST,
 ;;;; FIND-CAPTURED-IN-CHILDREN, %CAPTURED-IN-FORM) use so a direct-style call
 ;;;; with no continuation still returns a value. Verified empirically the same
@@ -53,9 +56,9 @@ rather than being killed by the shell — see run-tests.lisp's matching note.")
        (report-directory (merge-pathnames "cl-cc-ast-coverage-report/" root))
        (output-file (merge-pathnames "cl-cc-ast.coverage" root))
        ;; Only the files that carry branching logic are gated; see the header.
-       (gated-files (list (merge-pathnames "src/ast-functions.lisp" root)
-                          (merge-pathnames "src/ast-roundtrip.lisp" root)
-                          (merge-pathnames "src/closure.lisp" root)))
+       (gated-files (list (merge-pathnames "src/nodes/ast-functions.lisp" root)
+                          (merge-pathnames "src/nodes/ast-roundtrip.lisp" root)
+                          (merge-pathnames "src/closure-analysis/closure.lisp" root)))
        (minimum 98.9))
   (asdf:initialize-source-registry
    `(:source-registry
@@ -86,7 +89,7 @@ rather than being killed by the shell — see run-tests.lisp's matching note.")
                                            (getf stats :expression-total))))
                (branch-pct (* 100.0 (/ (getf stats :branch-covered)
                                        (getf stats :branch-total)))))
-          (format t "~&Gated coverage (ast-functions.lisp, ast-roundtrip.lisp, closure.lisp): ~
+          (format t "~&Gated coverage (nodes/ast-functions, nodes/ast-roundtrip, closure-analysis/closure): ~
                      expression ~,2F%, branch ~,2F%~%"
                   expression-pct branch-pct)
           (when (or (< expression-pct minimum) (< branch-pct minimum))
