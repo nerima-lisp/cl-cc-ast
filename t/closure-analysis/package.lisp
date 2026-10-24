@@ -8,7 +8,9 @@
                 #:make-ast-defun
                 #:make-ast-flet
                 #:make-ast-function
+                #:make-ast-binop
                 #:make-ast-if
+                #:make-ast-quote
                 #:make-ast-int
                 #:make-ast-labels
                 #:make-ast-lambda

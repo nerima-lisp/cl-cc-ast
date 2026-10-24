@@ -134,7 +134,131 @@ reads as one line instead of a LET plus an EXPECT."
     (with-continuation-result (result next calledp)
         (free-vars-of-list (list (make-ast-var :name 'x) (make-ast-var :name 'y)) #'next)
       (expect calledp :to-be-truthy)
-      (expect (%sorted-symbols result) :to-equal '(x y)))))
+      (expect (%sorted-symbols result) :to-equal '(x y))))
+
+  (it-sequential "free-vars-atomic-forms int"
+    (expect (find-free-variables (make-ast-int :value 42)) :to-equal nil))
+
+  (it-sequential "free-vars-atomic-forms quote"
+    (expect (find-free-variables (make-ast-quote :value '(a b c))) :to-equal nil))
+
+  (it-sequential "free-vars-binop-two-distinct-vars"
+    (expect (%sorted-symbols
+             (find-free-variables
+              (make-ast-binop :op '+
+                              :lhs (make-ast-var :name 'x)
+                              :rhs (make-ast-var :name 'y))))
+            :to-equal '(x y)))
+
+  (it-sequential "free-vars-same-var-deduplicated"
+    (expect (find-free-variables
+             (make-ast-binop :op '+
+                             :lhs (make-ast-var :name 'x)
+                             :rhs (make-ast-var :name 'x)))
+            :to-equal '(x)))
+
+  (it-sequential "free-vars-let-all-bound"
+    (expect (find-free-variables
+             (make-ast-let :bindings (list (cons 'x (make-ast-int :value 1)))
+                           :body (list (make-ast-var :name 'x))))
+            :to-equal nil))
+
+  (it-sequential "free-vars-let-unbound-body-var-is-free"
+    (expect (find-free-variables
+             (make-ast-let
+              :bindings (list (cons 'x (make-ast-int :value 1)))
+              :body (list (make-ast-binop :op '+
+                                         :lhs (make-ast-var :name 'x)
+                                         :rhs (make-ast-var :name 'z)))))
+            :to-equal '(z)))
+
+  (it-sequential "free-vars-lambda-all-params-bound"
+    (expect (find-free-variables
+             (make-ast-lambda
+              :params '(x y)
+              :body (list (make-ast-binop :op '+
+                                          :lhs (make-ast-var :name 'x)
+                                          :rhs (make-ast-var :name 'y)))))
+            :to-equal nil))
+
+  (it-sequential "free-vars-lambda-outer-var-is-free"
+    (expect (find-free-variables
+             (make-ast-lambda
+              :params '(x)
+              :body (list (make-ast-binop :op '+
+                                          :lhs (make-ast-var :name 'x)
+                                          :rhs (make-ast-var :name 'z)))))
+            :to-equal '(z)))
+
+  (it-sequential "free-vars-lambda-rest-param-shadows-body"
+    (expect (find-free-variables
+             (make-ast-lambda :params '(x) :rest-param 'rest
+                              :body (list (make-ast-var :name 'rest))))
+            :to-equal nil))
+
+  (it-sequential "free-vars-lambda-optional-param-shadows-body"
+    (expect (find-free-variables
+             (make-ast-lambda
+              :params nil
+              :optional-params (list (list 'a (make-ast-int :value 0) nil))
+              :body (list (make-ast-var :name 'a))))
+            :to-equal nil))
+
+  (it-sequential "free-vars-keyword-param-is-not-free-in-body"
+    (expect (find-free-variables
+             (make-ast-lambda
+              :params nil
+              :key-params (list (list 'k nil nil))
+              :body (list (make-ast-var :name 'k))))
+            :to-equal nil))
+
+  (it-sequential "free-vars-nested-let"
+    (expect (find-free-variables
+             (make-ast-let
+              :bindings (list (cons 'x (make-ast-int :value 1)))
+              :body (list
+                     (make-ast-let
+                      :bindings (list (cons 'y (make-ast-var :name 'x)))
+                      :body (list (make-ast-var :name 'y)
+                                  (make-ast-var :name 'w))))))
+            :to-equal '(w)))
+
+  (it-sequential "free-vars-defun-shadows-multiple-params"
+    (expect (find-free-variables
+             (make-ast-defun
+              :name 'my-fn :params '(a b)
+              :body (list (make-ast-var :name 'a)
+                          (make-ast-var :name 'b)
+                          (make-ast-var :name 'c))))
+            :to-equal '(c)))
+
+  (it-sequential "free-vars-call-symbol-func"
+    (expect (find-free-variables
+             (make-ast-call :func 'foo
+                            :args (list (make-ast-var :name 'x))))
+            :to-equal '(x)))
+
+  (it-sequential "free-vars-call-ast-func-node"
+    (expect (%sorted-symbols
+             (find-free-variables
+              (make-ast-call :func (make-ast-var :name 'f)
+                             :args (list (make-ast-var :name 'x)))))
+            :to-equal '(f x)))
+
+  (it-sequential "free-vars-labels-outer-var-in-binding-is-free"
+    (expect (find-free-variables
+             (make-ast-labels
+              :bindings (list (list 'rec '(n) (make-ast-var :name 'limit)))
+              :body (list (make-ast-call :func 'rec
+                                         :args (list (make-ast-int :value 0))))))
+            :to-equal '(limit)))
+
+  (it-sequential "free-vars-progn-collects-all-forms"
+    (expect (%sorted-symbols
+             (find-free-variables
+              (make-ast-progn :forms (list (make-ast-var :name 'a)
+                                           (make-ast-var :name 'b)))))
+            :to-equal '(a b))))
 
 (describe "binding-escape-kinds-in-body / binding-escapes-in-body-p"
   (define-cases
@@ -271,7 +395,48 @@ reads as one line instead of a LET plus an EXPECT."
                   (list (make-ast-call :func (make-ast-var :name 'x)
                                        :args (list (make-ast-int :value 1))))
                   'x)))
-      (expect kinds :to-equal '(:return)))))
+      (expect kinds :to-equal '(:return))))
+
+  (it-sequential "binding-escapes-in-body-p returns true for a direct reference"
+    (expect (binding-escapes-in-body-p
+             (list (make-ast-var :name 'x)) 'x)
+            :to-be-truthy))
+
+  (it-sequential "binding-escapes-in-body-p suppresses a safe direct consumer"
+    (expect (binding-escapes-in-body-p
+             (list (make-ast-call :func 'car
+                                  :args (list (make-ast-var :name 'x))))
+             'x :safe-consumers '("CAR"))
+            :to-be nil))
+
+  (it-sequential "binding-escapes-in-body-p reports closure capture"
+    (expect (binding-escapes-in-body-p
+             (list (make-ast-lambda :body (list (make-ast-var :name 'x)))) 'x)
+            :to-be-truthy))
+
+  (it-sequential "escape kinds deduplicate repeated uses and merge classifications"
+    (let ((kinds (binding-escape-kinds-in-body
+                  (list (make-ast-var :name 'x)
+                        (make-ast-var :name 'x)
+                        (make-ast-lambda :body (list (make-ast-var :name 'x))))
+                  'x)))
+      (expect (member :return kinds) :to-be-truthy)
+      (expect (member :capture kinds) :to-be-truthy)
+      (expect (length kinds) :to-equal 2)))
+
+  (it-sequential "literal and compound nodes without the binding do not escape"
+    (expect (binding-escape-kinds-in-body (list (make-ast-int :value 0)) 'x)
+            :to-be-null)
+    (expect (binding-escape-kinds-in-body
+             (list (make-ast-progn :forms (list (make-ast-int :value 0)))) 'x)
+            :to-be-null)
+    (expect (binding-escape-kinds-in-body
+             (list (make-ast-lambda :body (list (make-ast-int :value 0)))) 'x)
+            :to-be-null))
+
+  (it-sequential "an empty body has no escape kinds"
+    (expect (binding-escape-kinds-in-body nil 'x) :to-be-null)
+    (expect (binding-escapes-in-body-p nil 'x) :to-be nil)))
 
 (describe "find-captured-in-children"
   (it-sequential "a nested lambda capturing a param"
@@ -376,6 +541,32 @@ reads as one line instead of a LET plus an EXPECT."
     (expect (binding-one-shot-p
              (list (make-ast-call :func 'f :args nil) (make-ast-var :name 'f))
              'f)
+            :to-be nil))
+
+  (it-sequential "binding-direct-call-count counts a direct matching call"
+    (expect (binding-direct-call-count-in-body
+             (list (make-ast-call :func 'my-fn
+                                  :args (list (make-ast-int :value 1))))
+             'my-fn)
+            :to-equal 1))
+
+  (it-sequential "binding-direct-call-count ignores non-call references"
+    (expect (binding-direct-call-count-in-body
+             (list (make-ast-call :func 'f :args nil)
+                   (make-ast-var :name 'f))
+             'f)
+            :to-equal 1))
+
+  (it-sequential "binding-direct-call-count returns zero for a different callee"
+    (expect (binding-direct-call-count-in-body
+             (list (make-ast-call :func 'other-fn :args nil)) 'my-fn)
+            :to-equal 0))
+
+  (it-sequential "binding-one-shot-p is false when a call is captured"
+    (expect (binding-one-shot-p
+             (list (make-ast-call :func 'f :args nil)
+                   (make-ast-lambda :body (list (make-ast-var :name 'f))))
+             'f)
             :to-be nil)))
 
 (describe "closure-sharing-key / group-shareable-closures"
@@ -389,4 +580,16 @@ reads as one line instead of a LET plus an EXPECT."
            (d3 (list :entry-label 'l2 :captured-vars '((a . r3))))
            (groups (group-shareable-closures (list d1 d2 d3))))
       (expect (hash-table-count groups) :to-equal 1)
-      (expect (gethash (closure-sharing-key 'l1 '((a . r1))) groups) :to-equal (list d1 d2))))))
+      (expect (gethash (closure-sharing-key 'l1 '((a . r1))) groups) :to-equal (list d1 d2))))
+
+  (it-sequential "closure-key-normalization preserves a string entry label"
+    (expect (closure-sharing-key "L0" '((y . r2) (x . r1)))
+            :to-equal '("L0" (x y))))
+
+  (it-sequential "group-shareable-closures groups string labels and capture sets"
+    (let* ((d1 (list :entry-label "L0" :captured-vars '((x . r1) (y . r2))))
+           (d2 (list :entry-label "L0" :captured-vars '((y . r8) (x . r7))))
+           (d3 (list :entry-label "L1" :captured-vars '((x . r3) (y . r4))))
+           (groups (group-shareable-closures (list d1 d2 d3))))
+      (expect (hash-table-count groups) :to-equal 1)
+      (expect (gethash '("L0" (x y)) groups) :to-equal (list d1 d2))))))
