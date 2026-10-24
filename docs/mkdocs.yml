@@ -1,13 +1,11 @@
-# cl-cc-ast documentation — MkDocs + Material configuration.
-#
 # Build:   mkdocs build -f docs/mkdocs.yml --strict
 # Serve:   mkdocs serve  -f docs/mkdocs.yml
-# `nix build .#docs` drives this same config offline, and checks.docs runs it
-# on every `nix flake check`, so a broken link or an unlisted page fails the
-# pull request rather than the post-merge deploy.
+# `nix flake check` runs the strict build in pull request CI. The
+# `.github/workflows/docs.yml` workflow publishes Pages after a push to main,
+# so broken links and missing navigation entries fail before publication.
 
 site_name: cl-cc-ast
-site_description: cl-cc AST node types and protocol (ast-children, ast-bound-names)
+site_description: cl-cc AST nodes, tree operations, and closure analysis
 site_url: https://nerima-lisp.github.io/cl-cc-ast/
 repo_url: https://github.com/nerima-lisp/cl-cc-ast
 repo_name: nerima-lisp/cl-cc-ast
@@ -49,12 +47,8 @@ markdown_extensions:
       alternate_style: true
 
 # Every page under docs/src/ must appear here: --strict fails the build on an
-# unlisted page. That is deliberate, so the nav cannot silently fall behind.
+# unlisted page.
 #
-# The org template also lists Reference/Compatibility and Project/Roadmap and
-# Project/Releasing. They are omitted rather than stubbed: this system is
-# pre-1.0 with no compatibility promise to make yet, and an empty roadmap page
-# is worse than no roadmap page.
 nav:
   - Home: index.md
   - Getting started: getting-started.md
@@ -64,5 +58,6 @@ nav:
   - Reference:
       - API: reference/api.md
       - Architecture: reference/architecture.md
+      - Glossary: reference/glossary.md
   - Project:
       - Versioning: project/versioning.md
