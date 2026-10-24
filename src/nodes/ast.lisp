@@ -4,7 +4,7 @@
 ;;;; The concrete expression/control/CLOS variants are kept here so the ASDF
 ;;;; source snapshot stays self-contained.
 
-(in-package :cl-cc/ast)
+(in-package :cl-cc/ast/nodes)
 
 ;;; AST Base Struct with Source Location Tracking
 

@@ -4,7 +4,7 @@
 ;;;; S-expressions for debugging and pretty-printing purposes.
 ;;;; It is a pure roundtrip concern, separate from parsing and lowering.
 
-(in-package :cl-cc/ast)
+(in-package :cl-cc/ast/nodes)
 
 ;;; AST Pretty Printing
 

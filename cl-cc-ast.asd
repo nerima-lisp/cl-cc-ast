@@ -1,20 +1,15 @@
 ;;;; cl-cc-ast.asd — the AST node types and protocol extracted from cl-cc.
 ;;;;
-;;;; Both systems live in this one file. The org does not use a separate
-;;;; cl-cc-ast-test.asd: a second .asd is a second place for the version and
-;;;; the metadata to drift out of step with this one.
+;;;; Keep both ASDF system definitions together so runtime and test metadata
+;;;; are maintained in one manifest.
 ;;;;
-;;;; NOTE: the Lisp package these systems define is :cl-cc/ast, not
-;;;; :cl-cc-ast. GLOSSARY.md calls for cl-cc-<area> everywhere, because `/`
-;;;; already means "ASDF secondary system" — cl-cc-ast/test right below is
-;;;; exactly that. Renaming the package breaks cl-cc-type and cl-cc, so it is
-;;;; deliberately left for its own change.
+;;;; The runtime ASDF system loads the :cl-cc/ast/nodes and
+;;;; :cl-cc/ast/closure-analysis packages, then defines :cl-cc/ast to
+;;;; re-export the existing public API.
 
-;;; This form comes first, before any defsystem. ASDF binds *package* to
-;;; ASDF-USER only for a file it loads itself; read any other way -- a REPL
-;;; `load`, an editor evaluating the buffer, flake.nix parsing :version -- the
-;;; file is read in whatever package happens to be current. Saying it makes the
-;;; file self-contained.
+;;; Keep this form first so direct LOAD reads the system forms in ASDF-USER.
+;;; ASDF loads .asd files with *package* set to ASDF-USER, but a direct Lisp
+;;; LOAD starts in the caller's current package.
 (in-package #:asdf-user)
 
 (asdf:defsystem "cl-cc-ast"
@@ -27,8 +22,8 @@ only."
   :author "takeokunn <bararararatty@gmail.com>"
   :maintainer "takeokunn <bararararatty@gmail.com>"
   :license "MIT"
-  ;; Single source of truth for the version: flake.nix reads this form and
-  ;; release.yml refuses to publish a tag that disagrees with it.
+  ;; flake.nix and the release workflow read the first :version field here.
+  ;; Keep the test-system :version below in sync with this package version.
   :version "0.2.2"
   :homepage "https://github.com/nerima-lisp/cl-cc-ast"
   :bug-tracker "https://github.com/nerima-lisp/cl-cc-ast/issues"
@@ -36,11 +31,18 @@ only."
   :depends-on ()
   :pathname "src"
   :serial t
-  :components ((:file "package")
-               (:file "ast")
-               (:file "ast-functions")
-               (:file "closure")
-               (:file "ast-roundtrip"))
+  :components ((:module "nodes"
+                :serial t
+                :components ((:file "package")
+                             (:file "ast")
+                             (:file "ast-functions")
+                             (:file "ast-roundtrip")))
+               (:module "closure-analysis"
+                :serial t
+                :depends-on ("nodes")
+                :components ((:file "package")
+                             (:file "closure")))
+               (:file "package"))
   :in-order-to ((test-op (test-op "cl-cc-ast/test"))))
 
 (asdf:defsystem "cl-cc-ast/test"
@@ -55,12 +57,17 @@ only."
   :depends-on ("cl-cc-ast" "cl-weave")
   :pathname "t"
   :serial t
-  :components ((:file "package")
-               (:file "helpers-cases")
-               (:file "ast-test")
-               (:file "ast-analysis-test")
-               (:file "ast-roundtrip-test")
-               (:file "closure-test"))
+  :components ((:module "nodes"
+                :serial t
+                :components ((:file "package")
+                             (:file "helpers-cases")
+                             (:file "nodes-support")
+                             (:file "ast-test")))
+               (:module "closure-analysis"
+                :serial t
+                :components ((:file "package")
+                             (:file "helpers-cases")
+                             (:file "closure-test"))))
   :perform (asdf:test-op (op system)
              (declare (ignore op system))
              (unless (uiop:symbol-call :cl-weave

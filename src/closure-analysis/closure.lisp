@@ -1,5 +1,5 @@
 ;;;; compile/closure.lisp - Closure and Free Variable Analysis
-(in-package :cl-cc/ast)
+(in-package :cl-cc/ast/closure-analysis)
 
 (defun find-mutated-variables (ast &optional (k #'identity))
   "Call (FUNCALL K result) with all variable names that are targets of SETQ in
