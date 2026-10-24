@@ -201,29 +201,36 @@ clause matches against is legible independent of the escape-classification
 logic built on top of it.")
 
 (defun %escape-classify-call (node binding-name safe-consumers)
-  "Classify how BINDING-NAME escapes through the AST-CALL NODE.
-
-Split out of %ESCAPE-CLASSIFY because the call case alone carries three
-distinct rules — a declared safe consumer, a known external-call primitive,
-or a generic callee — each worth reading as its own COND clause rather than
-nested inside a nine-way TYPECASE."
+  "Classify escapes through NODE. Safe consumers suppress direct references only."
   (let ((func (ast-call-func node))
         (args (ast-call-args node)))
     (cond
-      ((and (symbolp func) (member (symbol-name func) safe-consumers :test #'string=))
-       nil)
+      ((and (symbolp func)
+            (some (lambda (consumer)
+                    (if (stringp consumer)
+                        (string= (symbol-name func) consumer)
+                        (eq func consumer)))
+                  safe-consumers))
+       (reduce #'%escape-merge-kinds
+               (mapcar (lambda (arg)
+                         (if (and (typep arg 'ast-var)
+                                  (eq (ast-var-name arg) binding-name))
+                             nil
+                             (%escape-classify arg binding-name safe-consumers)))
+                       args)
+               :initial-value nil))
       ((and (symbolp func)
             (member (symbol-name func) +external-call-primitive-names+ :test #'string=))
        (%escape-add-kind :external-call
                          (reduce #'%escape-merge-kinds
-                                 (mapcar (lambda (a)
-                                           (%escape-classify a binding-name safe-consumers))
+                                 (mapcar (lambda (arg)
+                                           (%escape-classify arg binding-name safe-consumers))
                                          args)
                                  :initial-value nil)))
       (t
        (let ((arg-kinds (reduce #'%escape-merge-kinds
-                                (mapcar (lambda (a)
-                                          (%escape-classify a binding-name safe-consumers))
+                                (mapcar (lambda (arg)
+                                          (%escape-classify arg binding-name safe-consumers))
                                         args)
                                 :initial-value nil)))
          (if arg-kinds
@@ -241,7 +248,13 @@ nested inside a nine-way TYPECASE."
     (ast-lambda     (%escape-capture-kinds (ast-lambda-body node)    binding-name safe-consumers))
     (ast-defun      (%escape-capture-kinds (ast-defun-body node)     binding-name safe-consumers))
     (ast-defmethod  (%escape-capture-kinds (ast-defmethod-body node) binding-name safe-consumers))
-    (ast-local-fns  (%escape-capture-kinds (ast-local-fns-body node) binding-name safe-consumers))
+    (ast-local-fns
+     (%escape-merge-kinds
+      (%escape-capture-kinds (ast-local-fns-body node) binding-name nil)
+      (when (some (lambda (binding)
+                    (%escape-mentions-forms-p (cddr binding) binding-name))
+                  (ast-local-fns-bindings node))
+        (list :capture))))
     (ast-apply
      (%escape-add-kind :external-call
                        (%escape-classify-children node binding-name safe-consumers)))
@@ -257,8 +270,8 @@ Escape modes:
 - :capture        the binding is captured by an inner closure/local function
 - :external-call  the binding is passed to APPLY/FUNCALL or an unknown callee
 
-SAFE-CONSUMERS is a list of uppercase function names that may consume the
-binding without constituting an escape."
+SAFE-CONSUMERS accepts symbols matched by identity or uppercase strings matched
+by name. The list is disabled inside local-function scopes."
   (when (listp body-forms)
     (reduce #'%escape-merge-kinds
             (mapcar (lambda (f) (%escape-classify f binding-name safe-consumers))
@@ -269,8 +282,9 @@ binding without constituting an escape."
   "Return T when BINDING-NAME escapes from BODY-FORMS.
 
 This is a conservative intra-procedural escape analysis helper layered on top
-of BINDING-ESCAPE-KINDS-IN-BODY. SAFE-CONSUMERS is a list of uppercase
-function names that are allowed to consume the binding without causing escape."
+of BINDING-ESCAPE-KINDS-IN-BODY. SAFE-CONSUMERS accepts symbols matched by
+identity or uppercase strings matched by name; the list is disabled inside
+local-function scopes."
   (not (null (binding-escape-kinds-in-body body-forms binding-name
                                            :safe-consumers safe-consumers))))
 

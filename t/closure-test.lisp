@@ -179,15 +179,43 @@ reads as one line instead of a LET plus an EXPECT."
     (expect-escape-kind :external-call
         (list (make-ast-call :func 'funcall :args (list (make-ast-var :name 'x)))) 'x))
 
-  (it-sequential "a declared safe consumer suppresses escape detection"
-    (expect (binding-escape-kinds-in-body
-             (list (make-ast-call :func 'safe-fn :args (list (make-ast-var :name 'x)))) 'x
-             :safe-consumers '("SAFE-FN"))
-            :to-be-null)
-    (expect (binding-escapes-in-body-p
-             (list (make-ast-call :func 'safe-fn :args (list (make-ast-var :name 'x)))) 'x
-             :safe-consumers '("SAFE-FN"))
-            :to-be nil))
+  (it-sequential "safe consumers only suppress direct references in the same scope"
+    (let ((direct-call
+            (make-ast-call :func 'safe-fn :args (list (make-ast-var :name 'x))))
+          (length-call
+            (make-ast-call :func 'cl:length :args (list (make-ast-var :name 'x))))
+          (foreign-length-call
+            (make-ast-call :func (make-symbol "LENGTH")
+                           :args (list (make-ast-var :name 'x))))
+          (nested-call
+            (make-ast-call :func 'safe-fn
+                           :args (list (make-ast-if
+                                        :cond (make-ast-int :value 1)
+                                        :then (make-ast-var :name 'x)
+                                        :else (make-ast-int :value 0)))))
+          (capturing-call
+            (make-ast-call :func 'safe-fn
+                           :args (list (make-ast-lambda
+                                        :body (list (make-ast-var :name 'x))))))
+          (shadowed-call
+            (make-ast-flet
+             :bindings (list (list 'length '(value) (make-ast-int :value 0)))
+             :body (list (make-ast-call :func 'cl:length
+                                        :args (list (make-ast-var :name 'x)))))))
+      (expect (binding-escape-kinds-in-body
+               (list direct-call) 'x :safe-consumers '("SAFE-FN"))
+              :to-be-null)
+      (expect (binding-escape-kinds-in-body
+               (list length-call) 'x :safe-consumers (list 'cl:length))
+              :to-be-null)
+      (expect-escape-kind :external-call (list foreign-length-call) 'x
+                          :safe-consumers (list 'cl:length))
+      (expect-escape-kind :return (list nested-call) 'x
+                          :safe-consumers '("SAFE-FN"))
+      (expect-escape-kind :capture (list capturing-call) 'x
+                          :safe-consumers '("SAFE-FN"))
+      (expect-escape-kind :external-call (list shadowed-call) 'x
+                          :safe-consumers (list 'cl:length))))
 
   (it-sequential "escapes through generic ast-children recursion"
     (expect-escape-kind :return
@@ -206,10 +234,15 @@ reads as one line instead of a LET plus an EXPECT."
                                   :body (list (make-ast-var :name 'x))))
         'x))
 
-  (it-sequential "a flet body referencing a binding is a :capture"
+  (it-sequential "flet bodies and local functions capture a binding"
     (expect-escape-kind :capture
         (list (make-ast-flet :bindings (list (list 'f '(y) (make-ast-int :value 0)))
                              :body (list (make-ast-var :name 'x))))
+        'x)
+    (expect-escape-kind :capture
+        (list (make-ast-flet
+               :bindings (list (list 'f nil (make-ast-var :name 'x)))
+               :body (list (make-ast-call :func 'f :args nil))))
         'x))
 
   (it-sequential "passing a binding to apply is an :external-call"
