@@ -60,13 +60,13 @@ only."
   :components ((:module "nodes"
                 :serial t
                 :components ((:file "package")
-                             (:file "helpers-cases")
+                             (:file "support-cases")
                              (:file "nodes-support")
                              (:file "ast-test")))
                (:module "closure-analysis"
                 :serial t
                 :components ((:file "package")
-                             (:file "helpers-cases")
+                             (:file "support-cases")
                              (:file "closure-test"))))
   :perform (asdf:test-op (op system)
              (declare (ignore op system))
