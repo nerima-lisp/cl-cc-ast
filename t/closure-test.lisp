@@ -244,6 +244,15 @@ reads as one line instead of a LET plus an EXPECT."
                :bindings (list (list 'f nil (make-ast-var :name 'x)))
                :body (list (make-ast-call :func 'f :args nil))))
         'x))
+  (it-sequential "labels local function body captures a binding"
+    (expect-escape-kind :capture
+        (list (make-ast-labels
+               :bindings (list (list 'f nil
+                                     (make-ast-if :cond (make-ast-int :value 1)
+                                                  :then (make-ast-var :name 'x)
+                                                  :else (make-ast-int :value 0))))
+               :body (list (make-ast-call :func 'f :args nil))))
+        'x))
 
   (it-sequential "passing a binding to apply is an :external-call"
     (expect-escape-kind :external-call
